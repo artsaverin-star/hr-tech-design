@@ -1,0 +1,41 @@
+#!/bin/bash
+# HR TECH DESIGN — установка моста для дизайнера. Запускать один раз: ./setup.sh
+set -e
+DIR="$(cd "$(dirname "$0")" && pwd)"
+
+echo "── HR TECH DESIGN · установка ──────────────────────────"
+
+# 1. Проверки
+if ! command -v node >/dev/null; then
+  echo "✗ Нет Node.js. Поставь с https://nodejs.org (LTS) и запусти setup.sh снова."
+  exit 1
+fi
+if ! command -v claude >/dev/null; then
+  echo "✗ Нет Claude Code. Установи:  npm install -g @anthropic-ai/claude-code"
+  echo "  Потом запусти  claude  и войди в СВОЙ аккаунт (/login). Затем setup.sh снова."
+  exit 1
+fi
+
+# 2. Сборка сервера (если ещё не собран)
+if [ ! -f "$DIR/dist/local.js" ]; then
+  echo "· Собираю сервер моста (один раз, ~1 мин)…"
+  (cd "$DIR" && npm install --no-audit --no-fund >/dev/null && npm run build:local >/dev/null)
+fi
+
+# 3. Подключение MCP к Claude Code (user scope — работает из любой папки)
+claude mcp remove figma-hrtech -s user >/dev/null 2>&1 || true
+claude mcp add figma-hrtech -s user -- node "$DIR/dist/local.js" >/dev/null
+echo "· MCP-сервер figma-hrtech подключён к Claude Code"
+
+# 4. Слэш-команда /hrtech
+mkdir -p ~/.claude/commands
+cp "$DIR/claude/commands/hrtech.md" ~/.claude/commands/hrtech.md
+echo "· Команда /hrtech установлена"
+
+echo ""
+echo "✓ Готово. Остался ОДИН ручной шаг в Figma (один раз):"
+echo "    Меню → Plugins → Development → Import plugin from manifest…"
+echo "    → $DIR/figma-desktop-bridge/manifest.json"
+echo ""
+echo "Каждый день: открой файл в Figma → запусти плагин HR TECH DESIGN"
+echo "→ в терминале  claude  → жми кнопки в плагине → в Claude напиши  /hrtech"

@@ -1,0 +1,1 @@
+{"version":3,"file":"json.js","sourceRoot":"","sources":["../../../../src/core/tokens/parsers/json.ts"],"names":[],"mappings":"AACA,OAAO,EAAE,8BAA8B,EAAE,MAAM,YAAY,CAAC;AAE5D,MAAM,UAAU,aAAa,CAAC,MAAkB;IAC9C,MAAM,IAAI,8BAA8B,CAAC,WAAW,EAAE,QAAQ,CAAC,CAAC;AAClE,CAAC;AAED,MAAM,UAAU,eAAe,CAAC,MAAkB;IAChD,MAAM,IAAI,8BAA8B,CAAC,aAAa,EAAE,QAAQ,CAAC,CAAC;AACpE,CAAC"}

@@ -1,0 +1,29 @@
+/** @type {import('jest').Config} */
+module.exports = {
+  preset: 'ts-jest',
+  testEnvironment: 'node',
+  roots: ['<rootDir>/src', '<rootDir>/tests'],
+  testMatch: ['**/__tests__/**/*.ts', '**/*.test.ts'],
+  collectCoverageFrom: [
+    'src/**/*.ts',
+    '!src/**/*.d.ts',
+    '!src/**/*.test.ts',
+  ],
+  coverageThreshold: {
+    global: {
+      branches: 70,
+      functions: 70,
+      lines: 70,
+      statements: 70,
+    },
+  },
+  moduleNameMapper: {
+    '^@/(.*)$': '<rootDir>/src/$1',
+    // resolve-package-root uses import.meta.url (ESM-only); mock with __dirname for CJS/Jest
+    '/resolve-package-root\\.js$': '<rootDir>/tests/__mocks__/resolve-package-root.js',
+    '^(\\.{1,2}/.*)\\.js$': '$1',
+    '^cloudflare:workers$': '<rootDir>/tests/__mocks__/cloudflare-workers.js',
+  },
+  // Required: WebSocket event listeners in tests can keep Node alive after tests complete
+  forceExit: true,
+};
