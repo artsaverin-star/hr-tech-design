@@ -29,8 +29,9 @@ echo "· MCP-сервер figma-hrtech подключён к Claude Code"
 
 # 4. Слэш-команда /hrtech
 mkdir -p ~/.claude/commands
-cp "$DIR/claude/commands/hrtech.md" ~/.claude/commands/hrtech.md
-echo "· Команда /hrtech установлена"
+ln -sf "$DIR/claude/commands/hrtech.md" ~/.claude/commands/hrtech.md
+ln -sf "$DIR/claude/commands/hrds-knowledge.md" ~/.claude/commands/hrds-knowledge.md
+echo "· Команда /hrtech и база знаний подключены (симлинк на репо — обновляются git pull)"
 
 echo ""
 echo "✓ Готово. Остался ОДИН ручной шаг в Figma (один раз):"

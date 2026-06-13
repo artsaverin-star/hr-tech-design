@@ -562,6 +562,18 @@
     .hrtech-console { font-size: 11px; color: rgba(0,0,0,.4); cursor: pointer; background: none; border: none; padding: 0; }
     .hrtech-console:hover { color: rgba(0,0,0,.7); }
     body.hrtech-console-hidden .wrap { display: none; }
+    .hrtech-guide-btn { display:flex; align-items:center; gap:10px; width:100%; height:40px; padding:0 16px; border:none; border-radius:20px; background:rgba(0,0,0,.04); color:rgba(0,0,0,.88); font:600 13px/20px 'Inter',-apple-system,sans-serif; cursor:pointer; }
+    .hrtech-guide-btn:hover { background:rgba(0,0,0,.08); }
+    .hrtech-guide-btn .hrt-arrow { margin-left:auto; transition:transform .2s; }
+    .hrtech-guide-btn.open .hrt-arrow { transform:rotate(90deg); }
+    .hrtech-guide { display:none; margin-top:8px; max-height:340px; overflow-y:auto; padding:4px 2px; font:400 12px/1.5 'Inter',-apple-system,sans-serif; color:rgba(0,0,0,.7); }
+    .hrtech-guide.open { display:block; }
+    .hrtech-guide h4 { font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:rgba(0,0,0,.5); margin:14px 0 6px; }
+    .hrtech-guide h4:first-child { margin-top:0; }
+    .hrtech-guide ol, .hrtech-guide ul { margin:0 0 4px; padding-left:18px; }
+    .hrtech-guide li { margin-bottom:4px; }
+    .hrtech-guide code { background:rgba(0,0,0,.06); border-radius:4px; padding:1px 5px; font:500 11px/1.4 'SF Mono',Menlo,monospace; }
+    .hrtech-guide .q { color:rgba(0,0,0,.88); }
   </style>
 
   <div id="hrtech-splash">
@@ -572,7 +584,7 @@
   <div class="hrtech-app">
     <div class="hrtech-head">
       <span class="hrtech-title">HR TECH DESIGN</span>
-      <span class="hrtech-ver">v1.5.1</span>
+      <span class="hrtech-ver">v1.7.0</span>
       <span class="hrtech-spacer"></span>
       <span class="hrtech-status" id="hrtech-status">Offline</span>
       <div class="hrtech-lamp" id="hrtech-lamp"></div>
@@ -589,13 +601,6 @@
         <span class="hrtech-ubar-label">Weekly</span>
         <div class="hrtech-ubar"><div class="hrtech-ubar-fill" id="hrtech-u-wfill"></div></div>
         <span class="hrtech-ubar-pct" id="hrtech-u-wpct"></span>
-      </div>
-      <div class="hrtech-models" id="hrtech-models">
-        <button class="hrtech-model active" data-m="auto" onclick="hrtechModel('auto')">Auto</button>
-        <button class="hrtech-model" data-m="haiku" onclick="hrtechModel('haiku')">Haiku</button>
-        <button class="hrtech-model" data-m="sonnet" onclick="hrtechModel('sonnet')">Sonnet</button>
-        <button class="hrtech-model" data-m="fable" onclick="hrtechModel('fable')">Fable</button>
-        <button class="hrtech-model" data-m="opus" onclick="hrtechModel('opus')">Opus</button>
       </div>
     </div>
 
@@ -614,11 +619,48 @@
       <div class="hrtech-feed" id="hrtech-feed"></div>
     </div>
 
-    <div class="hrtech-caption">ACTIONS</div>
-    <button class="hrtech-pill" onclick="hrtechAction('desktop-to-mobile')"><span class="hrt-ico">&#9707;</span>Desktop &#8594; Mobile<span class="hrt-arrow">&#8250;</span></button>
-    <button class="hrtech-pill" onclick="hrtechAction('fix-spelling')"><span class="hrt-ico">&#10003;</span>Fix Spelling<span style="margin-left:auto; font:400 10px/1 'Inter',sans-serif; color:rgba(0,0,0,.35);">Haiku · fast</span><span class="hrt-arrow" style="margin-left:6px;">&#8250;</span></button>
-    <button class="hrtech-pill" onclick="hrtechAction('assemble-scenario')"><span class="hrt-ico">&#9636;</span>Assemble Scenario<span class="hrt-arrow">&#8250;</span></button>
-    <button class="hrtech-pill" onclick="hrtechAction('apply-design-system')"><span class="hrt-ico">&#9671;</span>Apply Design System<span class="hrt-arrow">&#8250;</span></button>
+
+    <button class="hrtech-guide-btn" id="hrtech-guide-btn" onclick="hrtechToggleGuide()">&#128214;&nbsp; Как пользоваться<span class="hrt-arrow">&#8250;</span></button>
+    <div class="hrtech-guide" id="hrtech-guide">
+      <h4>1. Установка (один раз)</h4>
+      <ol>
+        <li>Node.js — поставь LTS с <b>nodejs.org</b></li>
+        <li>В Терминале: <code>npm i -g @anthropic-ai/claude-code</code>, затем <code>claude</code> и войди в <b>свой</b> аккаунт Claude</li>
+        <li>Получи папку <b>hr-plugin</b> и запусти <code>./setup.sh</code> — подключит мост и команды</li>
+        <li>Figma → Plugins → Development → Import → <b>figma-desktop-bridge/manifest.json</b></li>
+      </ol>
+      <h4>2. Как работать (каждый день)</h4>
+      <ol>
+        <li>Открой файл в Figma, запусти плагин, нажми <b>Activate Bridge</b> — лампочка зелёная</li>
+        <li>В Терминале: перейди в папку <b>hr-plugin</b> и запусти <code>claude</code></li>
+        <li>Выдели нужный фрейм(ы) в Figma</li>
+        <li>Опиши задачу обычными словами — Claude знает вашу ДС</li>
+      </ol>
+      <h4>3. Примеры запросов</h4>
+      <ul>
+        <li><span class="q">«сделай мобильную версию выделенного экрана»</span></li>
+        <li><span class="q">«исправь орфографию в этом фрейме»</span></li>
+        <li><span class="q">«собери выделенные экраны в сценарий»</span></li>
+        <li><span class="q">«приведи макет к компонентам HRDS»</span></li>
+        <li><span class="q">«что ты знаешь про HRDS Drawer?»</span> — справка по ДС</li>
+        <li><span class="q">«добавь паттерн: …»</span> — доучить систему новому экрану</li>
+      </ul>
+      <h4>4. Лайфхаки</h4>
+      <ul>
+        <li><b>Модель:</b> команда <code>/model</code> в сессии. Haiku — быстро, орфография; Sonnet — конвертации; Opus/Fable — сложные новые типы экранов (медленнее, качественнее)</li>
+        <li>Прервать ответ — <b>Esc</b></li>
+        <li>Всегда выделяй фрейм <b>до</b> запроса</li>
+        <li>Проси «покажи diff» или «decision log» — проверить точность переноса</li>
+        <li>Большой экран дроби на части</li>
+        <li>Мост (лампочка зелёная) держи активным всё время работы</li>
+      </ul>
+      <h4>5. Если не работает</h4>
+      <ul>
+        <li>Лампочка не зелёная → проверь, что <code>claude</code> запущен, нажми Activate Bridge</li>
+        <li>«нет инструмента figma_execute» → перезапусти <code>claude</code></li>
+        <li>Плагин завис → закрой и открой заново</li>
+      </ul>
+    </div>
 
     <div class="hrtech-foot">
       <button class="hrtech-console" onclick="hrtechToggleConsole()">Console</button>
@@ -695,7 +737,7 @@
     }
     function hrtechBar(rowId, fillId, pctId, entry) {
       var row = document.getElementById(rowId);
-      if (!entry || typeof entry.utilization !== 'number') { if (row) row.style.display = 'none'; return; }
+      if (!entry || typeof entry.utilization !== 'number') { return; }
       var pct = entry.utilization <= 1 && entry.utilization > 0 ? Math.round(entry.utilization * 100) : Math.round(entry.utilization);
       row.style.display = 'flex';
       var fill = document.getElementById(fillId);
@@ -869,6 +911,13 @@
         box.appendChild(r);
       }
       box.style.display = 'flex';
+    }
+
+    function hrtechToggleGuide() {
+      var g = document.getElementById('hrtech-guide');
+      var b = document.getElementById('hrtech-guide-btn');
+      g.classList.toggle('open'); b.classList.toggle('open');
+      if (typeof autoResize === 'function') { autoResize(); setTimeout(autoResize, 60); }
     }
 
     function hrtechToggleConsole() {

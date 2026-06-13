@@ -92,6 +92,7 @@ EOF3
       esac
     fi
     echo "$(date +%H:%M:%S) · в очереди: $N — запускаю Claude ($M)"
+    cd "$DIR" || true
     claude -p "/hrtech" --model "$M" --settings '{"effortLevel":"medium"}' --allowedTools "mcp__figma-hrtech__*,Bash(sleep:*)" >> /tmp/hrtech-claude.log 2>&1 &
     CPID=$!
     RUN_START=$(date +%s)

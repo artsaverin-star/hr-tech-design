@@ -82,6 +82,8 @@ Process the HR TECH DESIGN task queue in the currently open Figma file, through 
    If a task failed, keep only the failed tasks in the queue and report why.
 5. Report a short summary per task: what was done, node ids touched.
 
+**FULL COMPONENT & PATTERN REFERENCE:** before building, consult `hrds-knowledge.md` (same folder) — verified keys, usage rules and the overlay decision matrix for 25+ HRDS components and patterns (Table, Form, Inputs, Select, Tree-View, Accordion, Dialog/Drawer/Popover/Toast/Tooltip, FAB, Filter, File Upload, Date Picker, Suggest, etc.). Use those keys directly; do not re-search the library for anything listed there.
+
 ## KNOWN HRDS COMPONENTS — pre-cached catalog (do NOT search libraries for these)
 
 Import via `figma.importComponentSetByKeyAsync(key)` / `figma.importComponentByKeyAsync(key)` /
@@ -120,6 +122,18 @@ Import via `figma.importComponentSetByKeyAsync(key)` / `figma.importComponentByK
 - `💎 Table · Cell · Header` set `68319e4229006b8f0dcfeb6c33e44c565776f69c` — same slot scheme.
 - NOTE: desktop tables on mobile become grouped lists/accordions (see pattern map), Table·Cell is for desktop work.
 
-**Mobile screen parts — do not import, CLONE from reference frames on Page 2:**
-- Header stack + Home Indicator: clone from `1671:589068` (list screen) or `1671:589229` (summary screen — full pattern with sections, accordions, feedback buttons).
-- For a meeting-summary mobile screen, clone `1671:589229` wholesale and replace content (fastest proven path).
+**Mobile shell — fresh library instances by key (NEVER clone from screens):**
+- `System / Status Bar / iPhone` `219da9e0b1e1df75cdf05ef6b443aab36ea224ab` (375×54)
+- `❇️ Header [mobile]` set `a5d55d3e6028c6aa447b52b8f2cc393cbe21c376` (375×72; contains burger/search/bell — configure, never duplicate)
+- `💠 Content · Header [mobile]` set `fe41d6a71dcad39d0f590a8d2da113b5b00c9d0b` (back-link, H1, optional tabs)
+- `Home Indicator` `002fac881916fd9fea6caa565ba012ac59af07da` (375×21)
+
+**PATTERN BLUEPRINTS — the universal mechanism.** Approved results are DISTILLED into numeric blueprints
+inside the task rules (components by library key + spacing + order) — the system never depends on nodes of a
+particular file. Do not clone screens as templates; build every screen from the blueprints and the catalog.
+
+**AI chat components ('Я Team AI' library, by key):**
+- `bubble assistant — ai message` `786b1381827a2c35e45afdbe35590256ab3c7af3` (name header + response area inside)
+- `AI — assistant name header` set `07d8f012e530470c2f9776d47831c5b95a5119e2` (LLM=AI Chat …)
+- `AI — assistant responce` set `d3f66911a79f831687ee88e9e748e72bf8c6ef7a` (ready=on/off)
+- `ai — text area` set `a86d7b0b409c9cc52742b7c1ff66a774166e3f23` (generating=on/off; placeholder + Bottom Action slot)
