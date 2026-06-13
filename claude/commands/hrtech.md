@@ -116,7 +116,9 @@ Import via `figma.importComponentSetByKeyAsync(key)` / `figma.importComponentByK
 
 **Inputs & navigation ('🦄 HRDS · Компоненты'):**
 - `❇️ Input` set `7ff527c19e62a39ce71f9bf778645806c66605e8` · `💠 Input · Search` set `1f34e216eb8aa263c8fb7c61ced9b566e1035a04` · `❇️ Date Input` set `a5bbfee93de1293d5e5bdb9868ac5a3025fd9deb`
-- `⏳ TabsMenu` set `516b5ed26140087675c050397a8853b641fbaebe` (tabs like Помощники/Суммаризация) · `❇️ Sidebar` set `38564118b46d8c70b2cd4076bd361876be038b67` (desktop only — on mobile collapse to burger)
+- `⏳ TabsMenu` set `516b5ed26140087675c050397a8853b641fbaebe` (tabs like Помощники/Суммаризация) · `❇️ Sidebar` set `38564118b46d8c70b2cd4076bd361876be038b67` (Variant=Team|Lead — the whole Я Team rail, items baked in; desktop only — on mobile collapse to burger)
+- `❇️ Tag · Dropdown` set `5dcdae062ce66fceb1d8a6adc52767b3c76e01ce` (filter chips). Trailing `Slot →#23915:0` takes ONLY its preferred fillers — chevron `💠 Dropdown` (default), Counter, Hint, Delete, or **`💠 Icon Button · Preset=Add` `8ffecb7fe089984498a266ecb550e49e249dbe28`** for the «+» add-filter chip (set `has Divider`=off, root itemSpacing 0). NEVER swap a bare icon into a slot — use the 💠 filler.
+- `❇️ Button` icon-variant: the icon is the button's OWN prop `← Icon#29143:237` (INSTANCE_SWAP, e.g. set to a Bell), NOT the left slot. Slot← is only for an extra leading element.
 
 **Dialogs & overlays ('🦄 HRDS · Компоненты'):**
 - `💠 Dialog` set `15adeff5f730b5227d9df66040c6a2d678943dd5` — Size=S|M|L, Modal=off|on, has Scroll; bools `has Header/Footer/Content/Media`, content slot `↳ Content#40337:2` (swap a local 🔁 component in).

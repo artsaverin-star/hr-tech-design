@@ -102,6 +102,7 @@ keys: Breadcrumbs `435c22ac3a99cb45af86dc248da1aa383ed3a083`
 
 ### Filter
 keys: ❇️ Tag · Dropdown `5dcdae062ce66fceb1d8a6adc52767b3c76e01ce` · Tag · Toggle `c1787b6da695fc85f12ab1991b364141fabfdbd8` · Dropdown `d804e473f359d570f175d192ffd746ed885b11b9`
+- **Tag · Dropdown slot assembly (do it the DS way — NEVER drop a bare icon into a slot):** the trailing `Slot →#23915:0` accepts only its preferred fillers — `💠 Dropdown` (chevron, default), `Dropdown / 💠 Counter`, `Dropdown / 💠 Hint`, `💠 Delete`, `Delete / 💠 Counter`, `Delete / 💠 Hint`, and **`💠 Icon Button · Preset=Add` `8ffecb7fe089984498a266ecb550e49e249dbe28`** — the latter is the «+» add-filter affordance ("Участники +", "Теги +"). Set the slot to that filler and turn its `has Divider` off; keep tag root itemSpacing 0 (the filler owns the gap). Leading `Slot ←#23968:97` fillers: `Empty / —`, `💠 Icon` (its `← Icon#616:5` takes a real icon), `Button / 💠 Text`. `← Icon#29217:1` is the leading icon when Variant=Icon.
 - 3 levels: Actions (search + «Фильтры» toggle w/ counter + CTA), Filters (tag group), Results (count + sorting). Dropdown filter (single=radio/multi=checkbox), Toggle (on/off), Search (always first). «Все фильтры» opens full list in a Drawer. **mobile: Беклог — on mobile collapse filters behind the filter button.**
 
 ## Overlays (choose by isolation level — KEY DECISION MATRIX)
