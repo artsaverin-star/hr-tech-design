@@ -95,8 +95,13 @@ Import via `figma.importComponentSetByKeyAsync(key)` / `figma.importComponentByK
 - `❇️ Accordion` container set `56d0e088d1e7c4267d8cea6e7472456a4f78994f`.
 - `❇️ Button · Dropdown` set `b40ff2ec38d2a3e8a571a976b7523d3c41d63474` (Collapsed=on|off chevron 24×24).
 
-**Icons ('!💎 Icons'), sets with variants Size=8…24 × Filled:**
+**Icons ('!💎 Icons'), sets with variants Size=24|20|16|12|8 (× Filled where noted):**
 - `ChatsSocial / Like` `addb69a9844b0e51b1a0d92faa2044e0683bc064` · `ChatsSocial / Dislike` `30cf462391ab777765e81ed33e90b0b945f6d73a`.
+- `Actions / Plus` `901ba2c25c9a2460b3eb90438371cd83ea0ef8d7` (add / «+» on filter tags) · `Actions / PlusCircle` `fc58bdd17ad04fef5d57843e70cfe8ed055d4cf7`.
+- `Actions / Update` `7746655a7600213dc4785fb2b3c6e1f3aa7a53a6` (refresh / recurring-meeting glyph 🔄).
+- `Navigation / VerticalMenu` `740f2f158fd0738ea369f617aaaeea3f960bd677` (more / kebab ⋮ — row overflow menu).
+- `ChatsSocial / BellRinging` `fc838a8425a29282d1dfab99c0b3a291af45f65a` (× Filled) · `ChatsSocial / BellUnread` `4657aa14c21e6d93cb818c3341b1187f7303cedc` (bell with badge).
+- Variant naming for these sets: `Size=16` (Plus/Update/More) or `Size=24, Filled=false` (Bell). Pick the child by exact variant name; place a Size=16 icon in a `Button / 💠 Icon` slot, never bare.
 
 **Text styles (HRDS library, key → importStyleByKeyAsync):**
 - Title/L · Medium (28) `86570942101922425cc288d05c09e686fb8db0a1` · Title/S · Medium (20) `8ca038ab645cd66d60eb810f5a64b08f6c6fa974`
@@ -104,7 +109,8 @@ Import via `figma.importComponentSetByKeyAsync(key)` / `figma.importComponentByK
 - Caption/M (12) `1b3dde652fea59025951351afbb4cc193dc94e00` · System/Control (14) `752d95cde89a8a7d2c3a797841515e89fbba19d8`
 
 **Lists & statuses ('🦄 HRDS · Компоненты'):**
-- `💠 List-Item` set `9af0d111a9413804fd21ff818855fbbdd3df5e4b` — the mobile list row (use for desktop table rows on mobile).
+- `💠 List-Item` set `9af0d111a9413804fd21ff818855fbbdd3df5e4b` — the list row. Content=◇ List-Item|◇ List-Item · Inline|◇ Separator; State=Default|Hover|Focus|Selected. Internal layers: `Before` (slot, icon/avatar) · `Text · Leading` (Label + Caption = title + subtitle/description, both fillable) · `Text · Trailing` (Label + Caption) · `After` (Submenu = Label + Icon). Props: `← Title#2840:280`, bools `Slot · Before#4686:27` (def on), `Slot · After#4686:21`, `Text · Trailing#5447:0`, `Separator#5489:0`. Set the Caption text node directly (no exposed prop). Use for desktop table rows on mobile AND for any title+description list row.
+- `User · Avatar` set `eb13a231cb709b4eb15e1943607d25c28f022a08` — variants Size=24|32|40|48|56, State=—|disabled, has Status=off|on. The people avatar; stack with negative itemSpacing (e.g. −8) for participant clusters + a "+N" count text.
 - `❇️ Tag · Status` set `a37c17afd8a71799594e3f14eb58e86cb26873e0` — statuses like Завершена/В процессе/Ошибка.
 - `List` set `0b8298b6997f70db30f1e1730386b642a828cbf9`.
 
