@@ -49,6 +49,12 @@ Process the HR TECH DESIGN task queue in the currently open Figma file, through 
    frame, return a structured content model (zones, rows as {title, meta, status, desc}), NOT a raw dump of
    every text node; truncate long body texts you don't need verbatim yet and fetch them individually later,
    only for the elements you will actually transfer. Big returns = minutes of extra model time.
+0d. **Layout-sizing gotchas (CRITICAL — these cause silent visual bugs):**
+   - A fresh `figma.createFrame()` is **100×100 with FIXED sizing**. After setting `layoutMode` and appending children you MUST force hug, or rows stay 100px tall with huge gaps: HORIZONTAL row → `counterAxisSizingMode='AUTO'` (height); VERTICAL stack → `primaryAxisSizingMode='AUTO'` (height). When the frame is a child of an auto-layout parent, prefer `layoutSizingVertical/Horizontal='HUG'|'FILL'`.
+   - DS **icon/avatar instances often import at a large NATIVE size** (e.g. a standalone Calendar icon = 100px). Always `resize(16|20|24,...)` to the intended size before placing in a row.
+   - A **`COMPONENT_SET`'s width/height does NOT auto-fit** when you reposition variants via API — after stacking variants, `set.resizeWithoutConstraints(maxChildRight, maxChildBottom)`.
+   - **Tag · Status** leading icon lives in the nested `Slot ←` instance's `← Icon#616:5` (NOT the tag's own `← Icon#29143:237`); empty = hollow ring.
+   - Don't add manual labels in a component/modules SECTION — Figma renders the native (purple) component names; manual labels collide. `node.placeholder` is not settable (throws).
 1. Read the queue: via `figma_execute` run
    `return figma.root.getSharedPluginData('hrtech','task_queue')`
    It is a JSON array of tasks: `{action, label, version, rules[], page, scope, selection[], ts}`.
