@@ -25,7 +25,7 @@ npm install -g @anthropic-ai/claude-code
 claude            # при первом запуске войди в свой аккаунт Claude
 
 # 3. Клонируй этот репозиторий и запусти установщик:
-git clone <URL-этого-репозитория> ~/projects/hr-plugin
+git clone https://github.com/artsaverin-star/hr-tech-design.git ~/projects/hr-plugin
 cd ~/projects/hr-plugin
 ./setup.sh        # соберёт мост, подключит MCP и команды (симлинком на репо)
 ```

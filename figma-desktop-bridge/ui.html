@@ -573,7 +573,7 @@
     .hrtech-guide ol, .hrtech-guide ul { margin:0 0 4px; padding-left:18px; }
     .hrtech-guide li { margin-bottom:4px; }
     .hrtech-guide code { background:rgba(0,0,0,.06); border-radius:4px; padding:1px 5px; font:500 11px/1.4 'SF Mono',Menlo,monospace; }
-    .hrtech-guide .q { color:rgba(0,0,0,.88); }
+    .hrtech-guide .q { color:rgba(0,0,0,.88); } .hrtech-guide p { margin:0 0 6px; }
   </style>
 
   <div id="hrtech-splash">
@@ -584,7 +584,7 @@
   <div class="hrtech-app">
     <div class="hrtech-head">
       <span class="hrtech-title">HR TECH DESIGN</span>
-      <span class="hrtech-ver">v1.7.0</span>
+      <span class="hrtech-ver">v1.7.1</span>
       <span class="hrtech-spacer"></span>
       <span class="hrtech-status" id="hrtech-status">Offline</span>
       <div class="hrtech-lamp" id="hrtech-lamp"></div>
@@ -622,6 +622,9 @@
 
     <button class="hrtech-guide-btn" id="hrtech-guide-btn" onclick="hrtechToggleGuide()">&#128214;&nbsp; Как пользоваться<span class="hrt-arrow">&#8250;</span></button>
     <div class="hrtech-guide" id="hrtech-guide">
+      <h4>Как это устроено</h4>
+      <p style="margin:0 0 6px">Claude — как сотрудник: <b>мозг</b> (нейросеть), <b>методичка</b> (файлы знаний в папке проекта — про вашу ДС) и <b>руки</b> (этот мост в Figma). Знания приходят из файлов папки, когда запускаешь <code>claude</code> внутри неё — НЕ из моста.</p>
+      <p style="margin:0 0 6px">Репозиторий: <span class="q">https://github.com/artsaverin-star/hr-tech-design</span></p>
       <h4>1. Установка (один раз)</h4>
       <ol>
         <li>Node.js — поставь LTS с <b>nodejs.org</b></li>
@@ -632,7 +635,7 @@
       <h4>2. Как работать (каждый день)</h4>
       <ol>
         <li>Открой файл в Figma, запусти плагин, нажми <b>Activate Bridge</b> — лампочка зелёная</li>
-        <li>В Терминале: перейди в папку <b>hr-plugin</b> и запусти <code>claude</code></li>
+        <li>В Терминале: запусти <code>cd ~/projects/hr-plugin &amp;&amp; claude</code> (для сложного экрана — <code>claude --model fable</code>)</li>
         <li>Выдели нужный фрейм(ы) в Figma</li>
         <li>Опиши задачу обычными словами — Claude знает вашу ДС</li>
       </ol>
