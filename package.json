@@ -18,6 +18,7 @@
     "dev": "wrangler dev",
     "dev:local": "tsx src/local.ts",
     "build:local": "tsc -p tsconfig.local.json",
+    "build:server": "bash runtime/build.sh",
     "start": "wrangler dev",
     "test": "jest",
     "test:watch": "jest --watch",

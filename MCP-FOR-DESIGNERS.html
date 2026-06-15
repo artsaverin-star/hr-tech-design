@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude + Figma — инструкция для дизайнера</title>
+<style>
+  :root{
+    --bg:#f4f5f7; --card:#fff; --ink:#1a1a1f; --mute:#6b7280; --line:#e6e8ec;
+    --accent:#1f6feb; --term:#16181d; --termink:#e8eaed; --amber:#fff7e6; --amberline:#f0c36d;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.55; -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:760px; margin:0 auto; padding:40px 20px 80px}
+  header{margin-bottom:8px}
+  h1{font-size:30px; margin:0 0 8px; letter-spacing:-.02em}
+  .sub{color:var(--mute); font-size:16px; margin:0 0 28px}
+  .sub b{color:var(--ink)}
+  h2{font-size:13px; text-transform:uppercase; letter-spacing:.08em; color:var(--mute);
+     margin:36px 0 14px; font-weight:600}
+  .step{
+    background:var(--card); border:1px solid var(--line); border-radius:16px;
+    padding:18px 18px 16px; margin-bottom:12px; box-shadow:0 1px 2px rgba(20,20,30,.04);
+  }
+  .step .head{display:flex; align-items:flex-start; gap:12px; margin-bottom:2px}
+  .num{flex:none; width:26px; height:26px; border-radius:50%; background:var(--ink); color:#fff;
+       display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:600; margin-top:1px}
+  .step .title{font-weight:600; font-size:16px}
+  .step .desc{color:var(--mute); font-size:14px; margin:6px 0 0 38px}
+  .step .desc.tight{margin-top:2px}
+  .code{
+    position:relative; background:var(--term); color:var(--termink); border-radius:12px;
+    padding:14px 90px 14px 16px; margin:12px 0 0 38px; overflow-x:auto;
+    font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace; font-size:13.5px; line-height:1.7;
+    white-space:pre;
+  }
+  .code .dim{color:#8b929e}
+  .copy{
+    position:absolute; top:10px; right:10px; background:#2a2e36; color:#cfd3da; border:0;
+    border-radius:8px; padding:6px 12px; font-size:12px; cursor:pointer; font-family:inherit;
+    transition:background .15s;
+  }
+  .copy:hover{background:#3a3f49}
+  .copy.done{background:#1f7a3d; color:#fff}
+  .note{margin:10px 0 0 38px; font-size:13.5px; color:var(--mute)}
+  .figma{background:var(--amber); border:1px solid var(--amberline)}
+  .figma .badge{display:inline-block; background:var(--amberline); color:#5a3d00; font-size:11px;
+    font-weight:700; padding:2px 8px; border-radius:6px; margin-left:8px; vertical-align:middle}
+  .pathline{margin:12px 0 0 38px; font-family:"SF Mono",ui-monospace,Menlo,monospace; font-size:13px;
+    background:#fff; border:1px dashed var(--amberline); border-radius:10px; padding:10px 14px; word-break:break-all}
+  .reconnect{background:var(--ink); color:#fff; border-radius:16px; padding:18px 20px; margin-top:12px}
+  .reconnect b{font-size:16px}
+  .reconnect .chip{display:inline-block; background:#2c2f37; border-radius:7px; padding:3px 9px;
+    font-family:"SF Mono",ui-monospace,monospace; font-size:13px; margin:0 2px}
+  footer{margin-top:36px; color:var(--mute); font-size:13px; text-align:center}
+  footer a{color:var(--accent); text-decoration:none}
+  kbd{background:#fff; border:1px solid var(--line); border-bottom-width:2px; border-radius:6px;
+    padding:1px 6px; font-family:inherit; font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Claude + Figma</h1>
+    <p class="sub">Пишешь задачу словами — <b>Claude</b> делает её прямо в твоей Figma: собирает экраны по картинке, ставит компоненты HRDS, тексты, проверяет тёмную тему.</p>
+  </header>
+
+  <h2>Установка — один раз</h2>
+  <p class="note" style="margin-left:0">Открой <b>Терминал</b> (<kbd>Cmd</kbd>+<kbd>Пробел</kbd> → набери «Терминал» → Enter) и вставляй блоки по очереди, каждый раз <kbd>Enter</kbd>.</p>
+
+  <div class="step">
+    <div class="head"><div class="num">1</div><div class="title">Поставь Homebrew и Node.js</div></div>
+    <div class="desc tight">Попросит пароль Mac — вводи (при наборе он не виден, это нормально).</div>
+    <div class="code" data-code="/bin/bash -c &quot;$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)&quot;
+echo 'eval &quot;$(/opt/homebrew/bin/brew shellenv)&quot;' >> ~/.zprofile
+eval &quot;$(/opt/homebrew/bin/brew shellenv)&quot;
+brew install node"><button class="copy">Копировать</button>/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile
+eval "$(/opt/homebrew/bin/brew shellenv)"
+brew install node</div>
+  </div>
+
+  <div class="step">
+    <div class="head"><div class="num">2</div><div class="title">Поставь Claude</div></div>
+    <div class="code" data-code="npm install -g @anthropic-ai/claude-code"><button class="copy">Копировать</button>npm install -g @anthropic-ai/claude-code</div>
+  </div>
+
+  <div class="step">
+    <div class="head"><div class="num">3</div><div class="title">Войди в свой аккаунт Claude</div></div>
+    <div class="desc tight">Откроется браузер — авторизуйся. Потом закрой Claude: <kbd>Ctrl</kbd>+<kbd>C</kbd>.</div>
+    <div class="code" data-code="claude"><button class="copy">Копировать</button>claude</div>
+  </div>
+
+  <div class="step">
+    <div class="head"><div class="num">4</div><div class="title">Скачай проект</div></div>
+    <div class="desc tight">Создаст папку <b>~/hr-tech-design</b> (= твоя домашняя папка).</div>
+    <div class="code" data-code="cd ~ && git clone https://github.com/artsaverin-star/hr-tech-design.git"><button class="copy">Копировать</button>cd ~ && git clone https://github.com/artsaverin-star/hr-tech-design.git</div>
+  </div>
+
+  <div class="step">
+    <div class="head"><div class="num">5</div><div class="title">Установи</div></div>
+    <div class="desc tight">Дождись надписи «✓ Готово».</div>
+    <div class="code" data-code="cd ~/hr-tech-design && ./setup.sh"><button class="copy">Копировать</button>cd ~/hr-tech-design && ./setup.sh</div>
+  </div>
+
+  <div class="step figma">
+    <div class="head"><div class="num">6</div><div class="title">Поставь плагин в Figma <span class="badge">это не команда</span></div></div>
+    <div class="desc tight">Десктопная Figma → <b>Plugins → Development → Import plugin from manifest…</b> → откроется окно выбора файла → нажми <kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd>, вставь путь, Enter → выбери <b>manifest.json</b>:</div>
+    <div class="pathline">~/hr-tech-design/figma-desktop-bridge/manifest.json</div>
+  </div>
+
+  <h2>Каждый раз</h2>
+
+  <div class="step">
+    <div class="head"><div class="num">1</div><div class="title">Включи плагин в Figma</div></div>
+    <div class="desc tight">Plugins → Development → <b>HR TECH DESIGN</b> → нажми <b>Activate Bridge</b> (лампочка зелёная). Не закрывай плагин.</div>
+  </div>
+
+  <div class="step">
+    <div class="head"><div class="num">2</div><div class="title">Запусти Claude</div></div>
+    <div class="code" data-code="cd ~/hr-tech-design && claude"><button class="copy">Копировать</button>cd ~/hr-tech-design && claude</div>
+  </div>
+
+  <div class="step">
+    <div class="head"><div class="num">3</div><div class="title">Пиши задачу словами</div></div>
+    <div class="desc tight">Например: «Собери макет по этой картинке». Чтобы показать место — в Figma ПКМ по слою → <b>Copy link</b> → вставь ссылку в чат.</div>
+  </div>
+
+  <h2>Если связь отвалилась</h2>
+  <div class="reconnect">
+    <b>В чате Claude набери <span class="chip">/mcp</span> → выбери <span class="chip">figma-hrtech</span> → <span class="chip">Reconnect</span></b>
+    <div style="color:#a9adb6; font-size:13.5px; margin-top:6px">Не помогло — закрой Claude (<kbd style="background:#2c2f37;color:#cfd3da;border-color:#3a3f49">Ctrl</kbd>+<kbd style="background:#2c2f37;color:#cfd3da;border-color:#3a3f49">C</kbd>) и запусти заново: <span class="chip">cd ~/hr-tech-design &amp;&amp; claude</span></div>
+  </div>
+
+  <footer>
+    Путь у всех одинаковый: <b>~/hr-tech-design</b> (<code>~</code> = твоя домашняя папка).<br>
+    Репозиторий: <a href="https://github.com/artsaverin-star/hr-tech-design">github.com/artsaverin-star/hr-tech-design</a>
+  </footer>
+</div>
+
+<script>
+  document.querySelectorAll('.code').forEach(function(block){
+    var btn = block.querySelector('.copy');
+    btn.addEventListener('click', function(){
+      var text = block.getAttribute('data-code') || block.textContent.replace('Копировать','').trim();
+      navigator.clipboard.writeText(text).then(function(){
+        btn.textContent = 'Скопировано ✓';
+        btn.classList.add('done');
+        setTimeout(function(){ btn.textContent='Копировать'; btn.classList.remove('done'); }, 1600);
+      });
+    });
+  });
+</script>
+</body>
+</html>

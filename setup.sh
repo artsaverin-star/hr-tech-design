@@ -1,5 +1,5 @@
 #!/bin/bash
-# HR TECH DESIGN — установка моста для дизайнера. Запускать один раз: ./setup.sh
+# HR TECH DESIGN — подключение моста к Claude Code. Запускать один раз: ./setup.sh
 set -e
 DIR="$(cd "$(dirname "$0")" && pwd)"
 
@@ -12,31 +12,34 @@ if ! command -v node >/dev/null; then
 fi
 if ! command -v claude >/dev/null; then
   echo "✗ Нет Claude Code. Установи:  npm install -g @anthropic-ai/claude-code"
-  echo "  Потом запусти  claude  и войди в СВОЙ аккаунт (/login). Затем setup.sh снова."
+  echo "  Потом запусти  claude  и войди в СВОЙ аккаунт. Затем setup.sh снова."
   exit 1
 fi
 
-# 2. Сборка сервера (если ещё не собран)
-if [ ! -f "$DIR/dist/local.js" ]; then
-  echo "· Собираю сервер моста (один раз, ~1 мин)…"
+# 2. Сервер моста: используем готовый бандл (без сборки и npm install).
+#    Фолбэк: если бандла нет (старый клон) — собираем по-старому.
+SERVER="$DIR/runtime/bin/bridge.mjs"
+if [ ! -f "$SERVER" ]; then
+  echo "· Готовый сервер не найден — собираю (нужен один раз, ~1 мин)…"
   (cd "$DIR" && npm install --no-audit --no-fund >/dev/null && npm run build:local >/dev/null)
+  SERVER="$DIR/dist/local.js"
 fi
 
 # 3. Подключение MCP к Claude Code (user scope — работает из любой папки)
 claude mcp remove figma-hrtech -s user >/dev/null 2>&1 || true
-claude mcp add figma-hrtech -s user -- node "$DIR/dist/local.js" >/dev/null
-echo "· MCP-сервер figma-hrtech подключён к Claude Code"
+claude mcp add figma-hrtech -s user -- node "$SERVER" >/dev/null
+echo "· Мост figma-hrtech подключён к Claude Code"
 
-# 4. Слэш-команда /hrtech
+# 4. Слэш-команда /hrtech + база знаний (симлинк на репо — обновляются git pull)
 mkdir -p ~/.claude/commands
 ln -sf "$DIR/claude/commands/hrtech.md" ~/.claude/commands/hrtech.md
 ln -sf "$DIR/claude/commands/hrds-knowledge.md" ~/.claude/commands/hrds-knowledge.md
-echo "· Команда /hrtech и база знаний подключены (симлинк на репо — обновляются git pull)"
+echo "· Команда /hrtech и база знаний подключены"
 
 echo ""
 echo "✓ Готово. Остался ОДИН ручной шаг в Figma (один раз):"
 echo "    Меню → Plugins → Development → Import plugin from manifest…"
 echo "    → $DIR/figma-desktop-bridge/manifest.json"
 echo ""
-echo "Каждый день: открой файл в Figma → запусти плагин HR TECH DESIGN"
-echo "→ в терминале  claude  → жми кнопки в плагине → в Claude напиши  /hrtech"
+echo "Каждый день: открой файл в Figma → запусти плагин HR TECH DESIGN →"
+echo "в терминале  claude  → нажми Activate Bridge → пиши задачи."
