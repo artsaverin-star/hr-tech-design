@@ -1,1 +1,0 @@
-{"version":3,"file":"less.d.ts","sourceRoot":"","sources":["../../../../src/core/tokens/formatters/less.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,aAAa,EAAE,MAAM,aAAa,CAAC;AACjD,OAAO,KAAK,EAAE,aAAa,EAAE,YAAY,EAAE,MAAM,YAAY,CAAC;AAG9D,wBAAgB,UAAU,CACxB,IAAI,EAAE,aAAa,EACnB,KAAK,EAAE,aAAa,GACnB,YAAY,CAEd"}

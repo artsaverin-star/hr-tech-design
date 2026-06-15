@@ -1,1 +1,0 @@
-{"version":3,"file":"css-vars.js","sourceRoot":"","sources":["../../../../src/core/tokens/parsers/css-vars.ts"],"names":[],"mappings":"AACA,OAAO,EAAE,8BAA8B,EAAE,MAAM,YAAY,CAAC;AAE5D,MAAM,UAAU,YAAY,CAAC,MAAkB;IAC7C,MAAM,IAAI,8BAA8B,CAAC,uBAAuB,EAAE,QAAQ,CAAC,CAAC;AAC9E,CAAC"}

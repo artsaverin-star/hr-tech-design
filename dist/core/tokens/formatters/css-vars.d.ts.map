@@ -1,1 +1,0 @@
-{"version":3,"file":"css-vars.d.ts","sourceRoot":"","sources":["../../../../src/core/tokens/formatters/css-vars.ts"],"names":[],"mappings":"AAAA;;;;;;;;;;;;;;;;;;;GAmBG;AAEH,OAAO,KAAK,EAAS,aAAa,EAAwB,MAAM,aAAa,CAAC;AAC9E,OAAO,KAAK,EAAE,aAAa,EAAE,YAAY,EAAE,MAAM,YAAY,CAAC;AAE9D,wBAAgB,aAAa,CAC3B,GAAG,EAAE,aAAa,EAClB,IAAI,EAAE,aAAa,GAClB,YAAY,CA0Dd"}

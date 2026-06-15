@@ -1,1 +1,0 @@
-{"version":3,"file":"stubs.js","sourceRoot":"","sources":["../../../../src/core/tokens/formatters/stubs.ts"],"names":[],"mappings":"AAAA;;;;GAIG;AAEH,MAAM,OAAO,4BAA6B,SAAQ,KAAK;IACrD,YAAY,UAAkB;QAC5B,KAAK,CACH,2BAA2B,UAAU,iCAAiC;YACpE,yJAAyJ;YACzJ,eAAe,UAAU,qEAAqE,CACjG,CAAC;QACF,IAAI,CAAC,IAAI,GAAG,8BAA8B,CAAC;IAC7C,CAAC;CACF"}

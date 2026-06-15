@@ -1,1 +1,0 @@
-{"version":3,"file":"accessibility-tools.d.ts","sourceRoot":"","sources":["../../src/core/accessibility-tools.ts"],"names":[],"mappings":"AAAA;;;;;;;;;GASG;AAEH,OAAO,EAAE,SAAS,EAAE,MAAM,yCAAyC,CAAC;AA6FpE;;;;;;GAMG;AACH,wBAAgB,oBAAoB,CAAC,IAAI,EAAE,MAAM,EAAE,UAAU,EAAE,GAAG,GAAG,MAAM,CAAC,MAAM,EAAE,GAAG,CAAC,CAoGvF;AA+DD,wBAAgB,0BAA0B,CACzC,MAAM,EAAE,SAAS,GACf,IAAI,CAyEN"}
