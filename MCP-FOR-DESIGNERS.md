@@ -33,7 +33,8 @@ cd ~ && git clone https://github.com/artsaverin-star/hr-tech-design.git
 cd ~/hr-tech-design && ./setup.sh
 ```
 
-**6. Поставь плагин в Figma:** десктопная Figma → Plugins → Development → Import plugin from manifest… → выбери файл:
+**6. Поставь плагин в Figma** (тут команды нет — выбираешь файл внутри Figma):
+десктопная Figma → Plugins → Development → **Import plugin from manifest…** → откроется окно выбора файла → нажми **Cmd+Shift+G**, вставь этот путь, Enter → выбери `manifest.json`:
 ```
 ~/hr-tech-design/figma-desktop-bridge/manifest.json
 ```
