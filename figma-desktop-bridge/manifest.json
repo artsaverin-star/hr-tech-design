@@ -43,9 +43,15 @@
       "ws://localhost:9231",
       "ws://localhost:9232",
       "wss://figma-console-mcp.southleft.com",
-      "https://figma-console-mcp.southleft.com"
+      "https://figma-console-mcp.southleft.com",
+      "https://i.pravatar.cc",
+      "https://randomuser.me",
+      "https://images.unsplash.com",
+      "https://avatars.githubusercontent.com",
+      "https://picsum.photos",
+      "https://fastly.picsum.photos"
     ],
-    "reasoning": "Connects to local MCP server via WebSocket (port range 9223-9232 for multi-instance), and optionally to the cloud relay for remote write access.",
+    "reasoning": "Connects to local MCP server via WebSocket (port range 9223-9232 for multi-instance), optionally to the cloud relay, and to public photo hosts for placeholder avatar images.",
     "devAllowedDomains": [
       "http://localhost",
       "http://localhost:9223",
@@ -70,7 +76,13 @@
       "ws://localhost:9231",
       "ws://localhost:9232",
       "wss://figma-console-mcp.southleft.com",
-      "https://figma-console-mcp.southleft.com"
+      "https://figma-console-mcp.southleft.com",
+      "https://i.pravatar.cc",
+      "https://randomuser.me",
+      "https://images.unsplash.com",
+      "https://avatars.githubusercontent.com",
+      "https://picsum.photos",
+      "https://fastly.picsum.photos"
     ]
   }
 }
