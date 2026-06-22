@@ -34,7 +34,20 @@ echo "· Мост figma-hrtech подключён к Claude Code"
 mkdir -p ~/.claude/commands
 ln -sf "$DIR/claude/commands/hrtech.md" ~/.claude/commands/hrtech.md
 ln -sf "$DIR/claude/commands/hrds-knowledge.md" ~/.claude/commands/hrds-knowledge.md
+ln -sf "$DIR/claude/knowledge/team-notes.md" ~/.claude/commands/team-notes.md
 echo "· Команда /hrtech и база знаний подключены"
+
+# 5. Доступ к общей базе знаний (нужен только для кнопки «Поделиться знанием» — push в общий репо)
+if command -v gh >/dev/null; then
+  if gh auth status >/dev/null 2>&1; then
+    echo "· GitHub-доступ есть — кнопка «Поделиться знанием» будет работать"
+  else
+    echo "· Чтобы ДЕЛИТЬСЯ знаниями, один раз выполни:  gh auth login  (чтение/Обновить — без этого)"
+  fi
+else
+  echo "· Для кнопки «Поделиться знанием» нужен доступ на запись: поставь GitHub CLI"
+  echo "    (brew install gh) и выполни  gh auth login  — один раз. Для чтения не нужно."
+fi
 
 echo ""
 echo "✓ Готово. Остался ОДИН ручной шаг в Figma (один раз):"

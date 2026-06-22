@@ -584,7 +584,7 @@
   <div class="hrtech-app">
     <div class="hrtech-head">
       <span class="hrtech-title">HR TECH DESIGN</span>
-      <span class="hrtech-ver">v1.7.3</span>
+      <span class="hrtech-ver">v1.8.0</span>
       <span class="hrtech-spacer"></span>
       <span class="hrtech-status" id="hrtech-status">Offline</span>
       <div class="hrtech-lamp" id="hrtech-lamp"></div>
@@ -620,6 +620,17 @@
     </div>
 
 
+    <div class="hrtech-kb" style="margin-top:10px; display:flex; flex-direction:column; gap:6px;">
+      <div style="font-size:11px; font-weight:600; color:rgba(0,0,0,.55);">База знаний команды</div>
+      <button class="hrtech-pill" onclick="hrtechKnPull()">&#128260;&nbsp; Обновить базу знаний</button>
+      <button class="hrtech-pill" id="hrtech-kn-share-btn" onclick="hrtechKnShareToggle()">&#10133;&nbsp; Поделиться знанием</button>
+      <div id="hrtech-kn-form" style="display:none; flex-direction:column; gap:6px;">
+        <input id="hrtech-kn-author" type="text" placeholder="Твоё имя" style="font:inherit; padding:7px 10px; border:1px solid rgba(0,0,0,.15); border-radius:8px; box-sizing:border-box; width:100%;">
+        <textarea id="hrtech-kn-note" rows="3" placeholder="Что узнал: приём, ключ компонента, фикс… — попадёт в общую базу всей команды" style="font:inherit; padding:7px 10px; border:1px solid rgba(0,0,0,.15); border-radius:8px; resize:vertical; box-sizing:border-box; width:100%;"></textarea>
+        <button class="hrtech-pill hrtech-pill--primary" onclick="hrtechKnSend()">Отправить команде</button>
+      </div>
+    </div>
+
     <button class="hrtech-guide-btn" id="hrtech-guide-btn" onclick="hrtechToggleGuide()">&#128214;&nbsp; Как пользоваться<span class="hrt-arrow">&#8250;</span></button>
     <div class="hrtech-guide" id="hrtech-guide">
       <h4>Как это устроено</h4>
@@ -639,6 +650,8 @@
         <li>Выдели нужный фрейм(ы) в Figma</li>
         <li>Опиши задачу обычными словами — Claude знает вашу ДС</li>
       </ol>
+      <h4>База знаний команды</h4>
+      <p style="margin:0 0 6px"><b>🔄 Обновить базу знаний</b> — подтянуть наработки коллег (жми в начале работы). <b>➕ Поделиться знанием</b> — узнал приём/ключ/фикс, впиши и отправь: попадёт в общую базу и в контекст Claude у всех после «Обновить».</p>
       <h4>3. Примеры запросов</h4>
       <ul>
         <li><span class="q">«сделай мобильную версию выделенного экрана»</span></li>
@@ -789,6 +802,23 @@
 
     function hrtechAction(action) {
       parent.postMessage({ pluginMessage: { type: 'HRTECH_ACTION', action: action } }, '*');
+    }
+
+    function hrtechKnPull() {
+      parent.postMessage({ pluginMessage: { type: 'HRTECH_KN_PULL' } }, '*');
+    }
+    function hrtechKnShareToggle() {
+      var f = document.getElementById('hrtech-kn-form');
+      if (f) f.style.display = (f.style.display === 'none' || !f.style.display) ? 'flex' : 'none';
+    }
+    function hrtechKnSend() {
+      var a = document.getElementById('hrtech-kn-author');
+      var n = document.getElementById('hrtech-kn-note');
+      var note = n ? n.value.trim() : '';
+      if (!note) return;
+      parent.postMessage({ pluginMessage: { type: 'HRTECH_KN_SHARE', author: a ? a.value.trim() : '', note: note } }, '*');
+      if (n) n.value = '';
+      var f = document.getElementById('hrtech-kn-form'); if (f) f.style.display = 'none';
     }
 
     window.addEventListener('message', function (e2) {

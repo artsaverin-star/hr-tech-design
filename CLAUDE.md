@@ -10,6 +10,11 @@ The full HRDS component/pattern reference is the authoritative spec:
 
 @claude/commands/hrds-knowledge.md
 
+Shared team knowledge (verified recipes, component keys, fixes contributed by designers via the
+plugin's **«Поделиться знанием»** button) lives here and is also always in context:
+
+@claude/knowledge/team-notes.md
+
 The task playbook (zone-graph algorithm, blueprints, no-fabrication rule, status protocol) lives in
 `claude/commands/hrtech.md` — it is the body of the `/hrtech` slash command. Edit THESE two files to
 teach the system; everything else (the user-scope `/hrtech`, headless runs) reads from them via symlink.

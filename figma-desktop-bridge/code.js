@@ -311,7 +311,7 @@ async function loadFontsForNode(node) {
 // Listen for requests from UI (e.g., component data requests, write operations)
 // HR TECH: built-in bounded scanner — agents MUST use this instead of hand-written walkers.
 // Fast, capped, never freezes the plugin.
-globalThis.hrtechVersion = '1.7.3';
+globalThis.hrtechVersion = '1.8.0';
 // HR TECH: mechanical content diff — source vs built mobile. Fabricated text = busted.
 globalThis.hrtechDiff = async function (srcId, dstId) {
   figma.skipInvisibleInstanceChildren = true;
@@ -377,7 +377,40 @@ globalThis.hrtechScan = async function (nodeId, opts) {
   return { name: node.name, w: Math.round(node.width), h: Math.round(node.height), totalTexts: all.length, returned: texts.length, zones, texts };
 };
 
+// Knowledge-base buttons: poll kn_status (written by the auto-runner via git) and notify the result.
+function hrtechWaitKn() {
+  let tries = 0;
+  const poll = () => {
+    let s = '';
+    try { s = figma.root.getSharedPluginData('hrtech', 'kn_status'); } catch (e) {}
+    if (s) { figma.notify('HR TECH · ' + s, { timeout: 6000 }); return; }
+    if (tries++ < 25) { setTimeout(poll, 2000); return; }
+    figma.notify('HR TECH · база знаний: нет ответа — запущен ли авто-раннер (hrtech-watch.sh)?');
+  };
+  setTimeout(poll, 2000);
+}
+
 figma.ui.onmessage = async (msg) => {
+
+  // === HR TECH DESIGN: knowledge base sync (git, handled by the auto-runner) ===
+  if (msg.type === 'HRTECH_KN_PULL') {
+    figma.root.setSharedPluginData('hrtech', 'kn_status', '');
+    figma.root.setSharedPluginData('hrtech', 'kn_action', 'pull');
+    figma.notify('HR TECH · Обновляю базу знаний…');
+    hrtechWaitKn();
+    return;
+  }
+  if (msg.type === 'HRTECH_KN_SHARE') {
+    const note = (msg.note || '').trim();
+    if (!note) { figma.notify('HR TECH · Пустая заметка — нечего отправлять'); return; }
+    figma.root.setSharedPluginData('hrtech', 'kn_author', (msg.author || 'designer').slice(0, 60));
+    figma.root.setSharedPluginData('hrtech', 'kn_note', note);
+    figma.root.setSharedPluginData('hrtech', 'kn_status', '');
+    figma.root.setSharedPluginData('hrtech', 'kn_action', 'share');
+    figma.notify('HR TECH · Отправляю знание команде…');
+    hrtechWaitKn();
+    return;
+  }
 
   // === HR TECH DESIGN v1.4: action queue with baked-in rules ===============
   if (msg.type === 'HRTECH_FOCUS') {
