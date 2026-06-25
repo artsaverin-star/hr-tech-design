@@ -120,5 +120,13 @@ keys: Toast `696e215a0a3730c66c01d01342b9f368c2718b2d` · Tooltip `13df85e3d4248
 ### Org-structure search
 - Search field over a collapsible tree (company → business groups → departments), each node with member count + expand chevron + single-select. (Spec is a screenshot only — replicate that structure.)
 
+### Звонок коллеге из профиля (mobile sheet + desktop popover) — BLUEPRINT
+- **Модель дозвона.** Мобила: открытый номер → звоним напрямую (`tel:`); скрытый → через Яндекс/АТС (анонимный callback — АТС звонит на ВАШ номер, потом соединяет с коллегой). Десктоп: нативного диалера нет → ВСЁ через Яндекс, дозвон всегда на ОСНОВНОЙ номер коллеги.
+- **Следствие для UI.** На десктопе иконка звонка (`Actions / Call` `0d2948d7ba226c7edcf8f88a39a5274856aaa3d6`, как `❇️ Button` Variant=Icon) — только у строки «Основной»; остальные номера = только copy. Подпись попапа: «Вам поступит звонок из Яндекса. На какой номер ни нажми — коллеге дозвонимся на основной и соединим вас».
+- **Mobile** = Drawer [mobile] `4d65c84f128ab9a2bcb6f99320dcda3f729926e1`: плашка (surface/0 grey) с primary «Позвонить» + caption → список номеров (List-Item + Divider·H). Открытая строка = номер + copy + «Позвонить»; скрытая = «Номер скрыт» (secondary) + «Позвонить через Яндекс».
+- **Desktop** = popover (surface/100, radius 16, drop-shadow): primary «Позвонить через Яндекс» + caption + список (List-Item + copy, call-иконка только у основного).
+- **Состояния (полный набор, без тупиков).** страница контакта · основной открыт · основной скрыт + есть открытый · отсчёт 5с с отменой · все скрыты · «звоним вам» → соединяем · несколько скрыто · один скрыт · **нет ВАШЕГО номера (обязателен шаг запроса номера — иначе кнопка молчит)** · нет номеров. Каждое нажатие ведёт к понятному результату, немых кнопок быть не должно.
+- **На будущее.** Выбор «с какого телефона звонить» (мобильный/стационарный) делать НЕ тумблером «Стационарный» (был сломан и непонятен), а настройкой под иконкой-шестерёнкой (`Navigation / Settings` `720affbd7625eed97784d060ad4b04782ed726dd`) рядом с «Позвонить».
+
 ### Overlay surfaces meta-rule
 - Temporary interaction over the current flow without navigating away; user returns without losing state. The more important the decision + the more content → the more you block the background (Tooltip/Popover → Dialog/Drawer/Tour). Toast never blocks.
