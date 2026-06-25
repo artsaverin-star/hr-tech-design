@@ -584,7 +584,7 @@
   <div class="hrtech-app">
     <div class="hrtech-head">
       <span class="hrtech-title">HR TECH DESIGN</span>
-      <span class="hrtech-ver">v1.8.1</span>
+      <span class="hrtech-ver">v1.8.2</span>
       <span class="hrtech-spacer"></span>
       <span class="hrtech-status" id="hrtech-status">Offline</span>
       <div class="hrtech-lamp" id="hrtech-lamp"></div>
@@ -625,8 +625,7 @@
       <button class="hrtech-pill" onclick="hrtechKnPull()">&#128260;&nbsp; Обновить базу знаний</button>
       <button class="hrtech-pill" id="hrtech-kn-share-btn" onclick="hrtechKnShareToggle()">&#10133;&nbsp; Поделиться знанием</button>
       <div id="hrtech-kn-form" style="display:none; flex-direction:column; gap:6px;">
-        <input id="hrtech-kn-author" type="text" placeholder="Твоё имя" style="font:inherit; padding:7px 10px; border:1px solid rgba(0,0,0,.15); border-radius:8px; box-sizing:border-box; width:100%;">
-        <textarea id="hrtech-kn-note" rows="3" placeholder="Что узнал: приём, ключ компонента, фикс… — попадёт в общую базу всей команды" style="font:inherit; padding:7px 10px; border:1px solid rgba(0,0,0,.15); border-radius:8px; resize:vertical; box-sizing:border-box; width:100%;"></textarea>
+        <textarea id="hrtech-kn-note" rows="3" placeholder="Пиши как есть — приём, ключ, фикс. Имя подставится само, формулировки причешем потом." style="font:inherit; padding:7px 10px; border:1px solid rgba(0,0,0,.15); border-radius:8px; resize:vertical; box-sizing:border-box; width:100%;"></textarea>
         <button class="hrtech-pill hrtech-pill--primary" onclick="hrtechKnSend()">Отправить команде</button>
       </div>
     </div>
@@ -812,11 +811,10 @@
       if (f) f.style.display = (f.style.display === 'none' || !f.style.display) ? 'flex' : 'none';
     }
     function hrtechKnSend() {
-      var a = document.getElementById('hrtech-kn-author');
       var n = document.getElementById('hrtech-kn-note');
       var note = n ? n.value.trim() : '';
       if (!note) return;
-      parent.postMessage({ pluginMessage: { type: 'HRTECH_KN_SHARE', author: a ? a.value.trim() : '', note: note } }, '*');
+      parent.postMessage({ pluginMessage: { type: 'HRTECH_KN_SHARE', note: note } }, '*');
       if (n) n.value = '';
       var f = document.getElementById('hrtech-kn-form'); if (f) f.style.display = 'none';
     }

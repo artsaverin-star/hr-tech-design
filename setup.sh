@@ -33,9 +33,10 @@ echo "· Мост figma-hrtech подключён к Claude Code"
 # 4. Слэш-команда /hrtech + база знаний (симлинк на репо — обновляются git pull)
 mkdir -p ~/.claude/commands
 ln -sf "$DIR/claude/commands/hrtech.md" ~/.claude/commands/hrtech.md
+ln -sf "$DIR/claude/commands/hrtech-digest.md" ~/.claude/commands/hrtech-digest.md
 ln -sf "$DIR/claude/commands/hrds-knowledge.md" ~/.claude/commands/hrds-knowledge.md
 ln -sf "$DIR/claude/knowledge/team-notes.md" ~/.claude/commands/team-notes.md
-echo "· Команда /hrtech и база знаний подключены"
+echo "· Команды /hrtech, /hrtech-digest и база знаний подключены"
 
 # 5. Доступ к общей базе знаний (нужен только для кнопки «Поделиться знанием» — push в общий репо)
 if command -v gh >/dev/null; then

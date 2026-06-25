@@ -311,7 +311,7 @@ async function loadFontsForNode(node) {
 // Listen for requests from UI (e.g., component data requests, write operations)
 // HR TECH: built-in bounded scanner — agents MUST use this instead of hand-written walkers.
 // Fast, capped, never freezes the plugin.
-globalThis.hrtechVersion = '1.8.1';
+globalThis.hrtechVersion = '1.8.2';
 // HR TECH: mechanical content diff — source vs built mobile. Fabricated text = busted.
 globalThis.hrtechDiff = async function (srcId, dstId) {
   figma.skipInvisibleInstanceChildren = true;
@@ -403,7 +403,10 @@ figma.ui.onmessage = async (msg) => {
   if (msg.type === 'HRTECH_KN_SHARE') {
     const note = (msg.note || '').trim();
     if (!note) { figma.notify('HR TECH · Пустая заметка — нечего отправлять'); return; }
-    figma.root.setSharedPluginData('hrtech', 'kn_author', (msg.author || 'designer').slice(0, 60));
+    // Имя берём автоматически из аккаунта Figma — дизайнеру ничего вводить не нужно.
+    let author = (msg.author || '').trim();
+    if (!author) { try { author = (figma.currentUser && figma.currentUser.name) || ''; } catch (e) {} }
+    figma.root.setSharedPluginData('hrtech', 'kn_author', (author || 'designer').slice(0, 60));
     figma.root.setSharedPluginData('hrtech', 'kn_note', note);
     figma.root.setSharedPluginData('hrtech', 'kn_status', '');
     figma.root.setSharedPluginData('hrtech', 'kn_action', 'share');
