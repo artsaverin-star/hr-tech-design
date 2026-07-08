@@ -1571,6 +1571,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 
 					const connectedFiles = this.wsServer.getConnectedFiles();
 					const activeFileKey = this.wsServer.getActiveFileKey();
+					const pinnedFileKey = this.wsServer.getPinnedFileKey();
 
 					return {
 						content: [{
@@ -1578,11 +1579,13 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 							text: JSON.stringify({
 								transport: "websocket",
 								activeFileKey,
+								pinnedFileKey,
 								files: connectedFiles.map(f => ({
 									fileName: f.fileName,
 									fileKey: f.fileKey,
 									currentPage: f.currentPage,
 									isActive: f.isActive,
+									isPinned: f.fileKey === pinnedFileKey,
 									connectedAt: f.connectedAt,
 									url: f.fileKey
 										? `https://www.figma.com/design/${f.fileKey}/${encodeURIComponent(f.fileName || 'Untitled')}`
@@ -1592,7 +1595,9 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 								message: connectedFiles.length === 1
 									? `Connected to 1 file: "${connectedFiles[0].fileName}"`
 									: `Connected to ${connectedFiles.length} files. Active: "${connectedFiles.find(f => f.isActive)?.fileName || 'none'}"`,
-								ai_instruction: "Use figma_navigate with a file URL to switch the active file. All tools target the active file by default.",
+								ai_instruction: pinnedFileKey
+									? `Bridge is LOCKED to ${pinnedFileKey} — other open files can't steal the active target. Use figma_unpin_file to release, or figma_pin_file to move the lock.`
+									: "Use figma_navigate to switch the active file, or figma_pin_file to LOCK the bridge to one file so other open files can't steal focus (fixes commands hitting the wrong file). All tools target the active/pinned file by default.",
 							}),
 						}],
 					};
@@ -1607,6 +1612,57 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 						}],
 						isError: true,
 					};
+				}
+			},
+		);
+
+		this.server.tool(
+			"figma_pin_file",
+			"Lock (pin) the bridge to a specific connected Figma file so other open files can no longer steal the active target via selection/page changes. All subsequent tool calls target the pinned file until figma_unpin_file (or the file disconnects). Pass a url, fileKey, or fileName; omit all to pin the current active file. Use this when multiple files have the Desktop Bridge plugin open and commands keep hitting the wrong file.",
+			{
+				url: z.string().optional().describe("Figma file URL to pin (fileKey is extracted from it)."),
+				fileKey: z.string().optional().describe("Exact fileKey to pin."),
+				fileName: z.string().optional().describe("File name to pin (matched against connected files, case-insensitive substring)."),
+			},
+			async ({ url, fileKey, fileName }) => {
+				try {
+					if (!this.wsServer?.isClientConnected()) {
+						return { content: [{ type: "text", text: JSON.stringify({ error: "No files connected. Open the Desktop Bridge plugin in Figma." }) }], isError: true };
+					}
+					const connectedFiles = this.wsServer.getConnectedFiles();
+					let targetKey: string | null = fileKey || (url ? extractFileKey(url) : null);
+					if (!targetKey && fileName) {
+						const byName = connectedFiles.find(f => f.fileName === fileName)
+							|| connectedFiles.find(f => (f.fileName || "").toLowerCase().includes(fileName.toLowerCase()));
+						targetKey = byName?.fileKey || null;
+					}
+					if (!targetKey) targetKey = this.wsServer.getActiveFileKey();
+					if (!targetKey) {
+						return { content: [{ type: "text", text: JSON.stringify({ error: "Could not resolve a file to pin. Pass url/fileKey/fileName, or make sure a file is active.", files: connectedFiles.map(f => ({ fileName: f.fileName, fileKey: f.fileKey })) }) }], isError: true };
+					}
+					const ok = this.wsServer.pinFile(targetKey);
+					if (!ok) {
+						return { content: [{ type: "text", text: JSON.stringify({ error: "That file is not connected via the Desktop Bridge plugin.", requestedFileKey: targetKey, files: connectedFiles.map(f => ({ fileName: f.fileName, fileKey: f.fileKey })) }) }], isError: true };
+					}
+					const pinned = connectedFiles.find(f => f.fileKey === targetKey);
+					return { content: [{ type: "text", text: JSON.stringify({ status: "pinned", pinnedFileKey: targetKey, fileName: pinned?.fileName, message: `Bridge locked to "${pinned?.fileName || targetKey}". Other open files can no longer steal the active target. Call figma_unpin_file to release.` }) }] };
+				} catch (error) {
+					return { content: [{ type: "text", text: JSON.stringify({ error: error instanceof Error ? error.message : String(error), message: "Failed to pin file" }) }], isError: true };
+				}
+			},
+		);
+
+		this.server.tool(
+			"figma_unpin_file",
+			"Release the file lock set by figma_pin_file. After this, the active file follows user interaction again (selection/page changes).",
+			{},
+			async () => {
+				try {
+					const wasPinned = this.wsServer?.getPinnedFileKey() || null;
+					this.wsServer?.unpinFile();
+					return { content: [{ type: "text", text: JSON.stringify({ status: "unpinned", previouslyPinnedFileKey: wasPinned, message: wasPinned ? "File lock released. Active file follows interaction again." : "No file was pinned." }) }] };
+				} catch (error) {
+					return { content: [{ type: "text", text: JSON.stringify({ error: error instanceof Error ? error.message : String(error), message: "Failed to unpin file" }) }], isError: true };
 				}
 			},
 		);

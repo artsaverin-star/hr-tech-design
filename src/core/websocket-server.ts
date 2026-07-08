@@ -19,6 +19,7 @@ import { createServer as createHttpServer, IncomingMessage, ServerResponse } fro
 import type { Server as HttpServer } from 'http';
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { spawn } from 'child_process';
 import { createChildLogger } from './logger.js';
 import { PACKAGE_ROOT } from './resolve-package-root.js';
 import type { ConsoleLogEntry } from './types/index.js';
@@ -31,6 +32,10 @@ try {
 } catch {
   // Non-critical — version will show as 0.0.0
 }
+
+// Bulochka feature version — держать в синхроне с globalThis.hrtechVersion в code.js.
+// Плагин сравнивает свою версию с этой; при расхождении показывает кнопку «Починить».
+const HRTECH_VERSION = '1.12.0';
 
 const logger = createChildLogger({ component: 'websocket-server' });
 
@@ -126,6 +131,13 @@ export class FigmaWebSocketServer extends EventEmitter {
   private _pendingClients: Map<WebSocket, ReturnType<typeof setTimeout>> = new Map();
   /** The fileKey of the currently active (targeted) file */
   private _activeFileKey: string | null = null;
+  /**
+   * When set, the active file is LOCKED to this fileKey: SELECTION_CHANGE /
+   * PAGE_CHANGE from other files no longer steal focus, and sendCommand targets
+   * it by default. Cleared explicitly (unpinFile) or when the pinned file
+   * disconnects. This is the fix for "another open file keeps stealing active".
+   */
+  private _pinnedFileKey: string | null = null;
   private pendingRequests: Map<string, PendingRequest> = new Map();
   private requestIdCounter = 0;
   private options: WebSocketServerOptions;
@@ -273,6 +285,7 @@ export class FigmaWebSocketServer extends EventEmitter {
                 port: (this.wss!.address() as any)?.port,
                 pid: process.pid,
                 serverVersion: SERVER_VERSION,
+                hrtechVersion: HRTECH_VERSION,
                 startedAt: this._startedAt,
               },
             }));
@@ -370,6 +383,38 @@ export class FigmaWebSocketServer extends EventEmitter {
         return;
       }
 
+      // «Починить»: обновить движок (git pull → свежий бандл/скрипты) и перезапустить
+      // помощника. Скрипт detached — переживает перезапуск моста.
+      if (message.type === 'HRTECH_REPAIR') {
+        try {
+          const script = join(PACKAGE_ROOT, 'scripts', 'repair.sh');
+          const child = spawn('bash', [script], { detached: true, stdio: 'ignore' });
+          child.unref();
+          try { ws.send(JSON.stringify({ type: 'HRTECH_REPAIR_RESULT', data: { started: true } })); } catch {}
+          logger.info({ script }, 'HRTECH repair started');
+        } catch (e) {
+          try { ws.send(JSON.stringify({ type: 'HRTECH_REPAIR_RESULT', data: { started: false, error: e instanceof Error ? e.message : String(e) } })); } catch {}
+        }
+        return;
+      }
+
+      // Lock/unlock the bridge to THIS file (the "work only in this file" widget
+      // toggle). The fileKey is resolved from the sending ws, so other open files
+      // can no longer steal the active file via selection/page changes.
+      if (message.type === 'PIN_FILE' || message.type === 'UNPIN_FILE') {
+        const found = this.findClientByWs(ws);
+        if (found) {
+          if (message.type === 'PIN_FILE') this.pinFile(found.fileKey);
+          else this.unpinFile();
+          const pinned = this._pinnedFileKey === found.fileKey;
+          try {
+            ws.send(JSON.stringify({ type: 'PIN_STATE', data: { pinned, fileKey: found.fileKey, fileName: found.client.fileInfo.fileName } }));
+          } catch {}
+          this.emit('pinStateChanged', { fileKey: found.fileKey, pinned });
+        }
+        return;
+      }
+
       // FILE_INFO promotes pending clients to named clients
       if (message.type === 'FILE_INFO' && message.data) {
         this.handleFileInfo(message.data, ws);
@@ -429,7 +474,8 @@ export class FigmaWebSocketServer extends EventEmitter {
         if (found) {
           found.client.selection = message.data as SelectionInfo;
           found.client.lastActivity = Date.now();
-          this._activeFileKey = found.fileKey;
+          // Interaction makes this the active file — UNLESS a file is pinned/locked.
+          if (!this._pinnedFileKey) this._activeFileKey = found.fileKey;
         }
         this.emit('selectionChange', { fileKey: found?.fileKey ?? null, ...message.data });
       }
@@ -441,7 +487,8 @@ export class FigmaWebSocketServer extends EventEmitter {
           found.client.fileInfo.currentPage = message.data.pageName;
           found.client.fileInfo.currentPageId = message.data.pageId || null;
           found.client.lastActivity = Date.now();
-          this._activeFileKey = found.fileKey;
+          // Interaction makes this the active file — UNLESS a file is pinned/locked.
+          if (!this._pinnedFileKey) this._activeFileKey = found.fileKey;
         }
         this.emit('pageChange', { fileKey: found?.fileKey ?? null, ...message.data });
       }
@@ -529,6 +576,9 @@ export class FigmaWebSocketServer extends EventEmitter {
       this.clients.delete(previousEntry.fileKey);
       if (this._activeFileKey === previousEntry.fileKey) {
         this._activeFileKey = null;
+      }
+      if (this._pinnedFileKey === previousEntry.fileKey) {
+        this._pinnedFileKey = null;
       }
       logger.info(
         { oldFileKey: previousEntry.fileKey, newFileKey: fileKey },
@@ -630,6 +680,12 @@ export class FigmaWebSocketServer extends EventEmitter {
         this.clients.delete(fileKey);
         this.rejectPendingRequestsForFile(fileKey, 'WebSocket client disconnected');
 
+        // If the pinned/locked file disconnected, release the lock so the
+        // bridge can fall back to another connected file.
+        if (this._pinnedFileKey === fileKey) {
+          this._pinnedFileKey = null;
+        }
+
         // If active file disconnected, switch to another connected file
         if (this._activeFileKey === fileKey) {
           this._activeFileKey = null;
@@ -655,7 +711,7 @@ export class FigmaWebSocketServer extends EventEmitter {
   sendCommand(method: string, params: Record<string, any> = {}, timeoutMs = 15000, targetFileKey?: string): Promise<any> {
 
     return new Promise((resolve, reject) => {
-      const fileKey = targetFileKey || this._activeFileKey;
+      const fileKey = targetFileKey || this._pinnedFileKey || this._activeFileKey;
 
       if (!fileKey) {
         reject(new Error('No active file connected. Make sure the Desktop Bridge plugin is open in Figma.'));
@@ -980,6 +1036,37 @@ export class FigmaWebSocketServer extends EventEmitter {
    */
   getActiveFileKey(): string | null {
     return this._activeFileKey;
+  }
+
+  /**
+   * Pin (lock) the active file to this fileKey. While pinned, SELECTION_CHANGE /
+   * PAGE_CHANGE from OTHER files no longer steal the active file, and sendCommand
+   * targets the pinned file by default. Also sets it active so reads/screenshots
+   * target it too. Returns true if the file is connected.
+   */
+  pinFile(fileKey: string): boolean {
+    const client = this.clients.get(fileKey);
+    if (client && client.ws.readyState === WebSocket.OPEN) {
+      this._pinnedFileKey = fileKey;
+      this._activeFileKey = fileKey;
+      logger.info({ fileKey, fileName: client.fileInfo.fileName }, 'File pinned (locked active)');
+      this.emit('activeFileChanged', { fileKey, fileName: client.fileInfo.fileName });
+      return true;
+    }
+    return false;
+  }
+
+  /** Release the file lock. Active file then follows interaction again. */
+  unpinFile(): void {
+    if (this._pinnedFileKey) {
+      logger.info({ fileKey: this._pinnedFileKey }, 'File unpinned (lock released)');
+      this._pinnedFileKey = null;
+    }
+  }
+
+  /** The fileKey the bridge is locked to, or null if not locked. */
+  getPinnedFileKey(): string | null {
+    return this._pinnedFileKey;
   }
 
   /**

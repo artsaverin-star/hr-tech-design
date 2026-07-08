@@ -1,6 +1,6 @@
 {
   "name": "HR TECH DESIGN",
-  "id": "hrtech.design.bridge",
+  "id": "1656667332797186865",
   "api": "1.0.0",
   "main": "code.js",
   "ui": "ui.html",
@@ -49,7 +49,8 @@
       "https://images.unsplash.com",
       "https://avatars.githubusercontent.com",
       "https://picsum.photos",
-      "https://fastly.picsum.photos"
+      "https://fastly.picsum.photos",
+      "https://d5daab1smfcq6f70h8o2.xxg4zr82.apigw.yandexcloud.net"
     ],
     "reasoning": "Connects to local MCP server via WebSocket (port range 9223-9232 for multi-instance), optionally to the cloud relay, and to public photo hosts for placeholder avatar images.",
     "devAllowedDomains": [
@@ -82,7 +83,8 @@
       "https://images.unsplash.com",
       "https://avatars.githubusercontent.com",
       "https://picsum.photos",
-      "https://fastly.picsum.photos"
+      "https://fastly.picsum.photos",
+      "https://d5daab1smfcq6f70h8o2.xxg4zr82.apigw.yandexcloud.net"
     ]
   }
 }

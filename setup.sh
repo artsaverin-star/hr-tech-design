@@ -38,16 +38,35 @@ ln -sf "$DIR/claude/commands/hrds-knowledge.md" ~/.claude/commands/hrds-knowledg
 ln -sf "$DIR/claude/knowledge/team-notes.md" ~/.claude/commands/team-notes.md
 echo "· Команды /hrtech, /hrtech-digest и база знаний подключены"
 
-# 5. Доступ к общей базе знаний (нужен только для кнопки «Поделиться знанием» — push в общий репо)
-if command -v gh >/dev/null; then
-  if gh auth status >/dev/null 2>&1; then
-    echo "· GitHub-доступ есть — кнопка «Поделиться знанием» будет работать"
-  else
-    echo "· Чтобы ДЕЛИТЬСЯ знаниями, один раз выполни:  gh auth login  (чтение/Обновить — без этого)"
-  fi
+# 5. Автозапуск фонового помощника при входе в систему — чтобы задачи и синхронизация
+#    базы знаний работали САМИ, без терминала. Помощник поднимает мост; плагин к нему цепляется.
+#    (Опрос очереди бесплатный — токены тратятся только на реальные задачи.)
+PLIST="$HOME/Library/LaunchAgents/design.hrtech.bulochka.runner.plist"
+mkdir -p "$HOME/Library/LaunchAgents"
+cat > "$PLIST" <<PL
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>design.hrtech.bulochka.runner</string>
+  <key>ProgramArguments</key><array>
+    <string>/bin/bash</string><string>$DIR/scripts/hrtech-watch.sh</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>20</integer>
+  <key>WorkingDirectory</key><string>$DIR</string>
+  <key>StandardOutPath</key><string>/tmp/hrtech-runner.log</string>
+  <key>StandardErrorPath</key><string>/tmp/hrtech-runner.log</string>
+  <key>EnvironmentVariables</key><dict>
+    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+</dict></plist>
+PL
+launchctl unload "$PLIST" >/dev/null 2>&1 || true
+if launchctl load "$PLIST" >/dev/null 2>&1; then
+  echo "· Фоновый помощник добавлен в автозапуск — задачи и синк работают без терминала"
 else
-  echo "· Для кнопки «Поделиться знанием» нужен доступ на запись: поставь GitHub CLI"
-  echo "    (brew install gh) и выполни  gh auth login  — один раз. Для чтения не нужно."
+  echo "· Автозапуск не включился — можно запускать вручную:  ./scripts/hrtech-watch.sh"
 fi
 
 echo ""
@@ -55,5 +74,5 @@ echo "✓ Готово. Остался ОДИН ручной шаг в Figma (о
 echo "    Меню → Plugins → Development → Import plugin from manifest…"
 echo "    → $DIR/figma-desktop-bridge/manifest.json"
 echo ""
-echo "Каждый день: открой файл в Figma → запусти плагин HR TECH DESIGN →"
-echo "в терминале  claude  → нажми Activate Bridge → пиши задачи."
+echo "Каждый день: просто открой файл в Figma и запусти плагин HR TECH DESIGN."
+echo "Всё остальное — само: помощник уже в фоне, виджет подключается автоматически."

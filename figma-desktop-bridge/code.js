@@ -11,7 +11,7 @@ var PLUGIN_VERSION = '1.31.0'; // Kept in sync with package.json by scripts/rele
 console.log('🌉 [Desktop Bridge] Plugin loaded (v' + PLUGIN_VERSION + ')');
 
 // Show minimal UI - compact status indicator
-figma.showUI(__html__, { width: 360, height: 320, visible: true, themeColors: true });
+figma.showUI(__html__, { width: 180, height: 112, visible: true, themeColors: true });
 
 // HR TECH: poll generation status + queue length for the UI
 setInterval(() => {
@@ -311,7 +311,7 @@ async function loadFontsForNode(node) {
 // Listen for requests from UI (e.g., component data requests, write operations)
 // HR TECH: built-in bounded scanner — agents MUST use this instead of hand-written walkers.
 // Fast, capped, never freezes the plugin.
-globalThis.hrtechVersion = '1.9.0';
+globalThis.hrtechVersion = '1.12.0';
 // HR TECH: mechanical content diff — source vs built mobile. Fabricated text = busted.
 globalThis.hrtechDiff = async function (srcId, dstId) {
   figma.skipInvisibleInstanceChildren = true;
@@ -398,6 +398,17 @@ figma.ui.onmessage = async (msg) => {
     figma.root.setSharedPluginData('hrtech', 'kn_action', 'pull');
     figma.notify('HR TECH · Обновляю базу знаний…');
     hrtechWaitKn();
+    return;
+  }
+  if (msg.type === 'HRTECH_KN_SYNC') {
+    figma.root.setSharedPluginData('hrtech', 'kn_status', '');
+    figma.root.setSharedPluginData('hrtech', 'kn_action', 'sync');
+    figma.notify('HR TECH · Синхронизирую с командой…');
+    hrtechWaitKn();
+    return;
+  }
+  if (msg.type === 'HRTECH_INSTALL_HINT') {
+    figma.notify('Команда установки скопирована — открой Терминал и вставь (⌘V, Enter)');
     return;
   }
   if (msg.type === 'HRTECH_KN_SHARE') {
@@ -3413,7 +3424,7 @@ figma.ui.onmessage = async (msg) => {
       });
       // Short delay to let the response message be sent before reload
       setTimeout(function() {
-        figma.showUI(__html__, { width: 360, height: 320, visible: true, themeColors: true });
+        figma.showUI(__html__, { width: 180, height: 112, visible: true, themeColors: true });
       }, 100);
     } catch (error) {
       var errorMsg = error && error.message ? error.message : String(error);

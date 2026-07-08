@@ -94,6 +94,8 @@ EOF3
     KN_OUT=""
     if [ "$KN" = "pull" ]; then
       KN_OUT=$("$DIR/scripts/knowledge-sync.sh" pull 2>&1 | tail -1)
+    elif [ "$KN" = "sync" ]; then
+      KN_OUT=$("$DIR/scripts/knowledge-sync.sh" sync 2>&1 | tail -1)
     elif [ "$KN" = "share" ]; then
       GET=$("$DIR/scripts/hrtech-call.sh" "$CMD/_kn_get.json" 25 2>/dev/null)
       A64=$(echo "$GET" | grep -o '\\"a\\":\\"[A-Za-z0-9+/=]*' | sed 's/.*"//' | head -1)

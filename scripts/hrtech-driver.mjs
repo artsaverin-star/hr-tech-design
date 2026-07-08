@@ -4,11 +4,20 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const CMD_DIR = '/tmp/hrtech-cmds';
 fs.mkdirSync(CMD_DIR, { recursive: true });
 
-const child = spawn('node', ['/Users/artsaverin/projects/hr-plugin/dist/local.js'], {
+// Путь к серверу моста — ОТНОСИТЕЛЬНО этого скрипта, чтобы работало на любой установке.
+// Приоритет: готовый бандл runtime/bin/bridge.mjs, иначе собранный dist/local.js.
+const REPO = path.resolve(fileURLToPath(import.meta.url), '..', '..');
+const SERVER = [
+  path.join(REPO, 'runtime', 'bin', 'bridge.mjs'),
+  path.join(REPO, 'dist', 'local.js'),
+].find((p) => fs.existsSync(p)) || path.join(REPO, 'runtime', 'bin', 'bridge.mjs');
+
+const child = spawn('node', [SERVER], {
   stdio: ['pipe', 'pipe', 'inherit'],
 });
 child.on('exit', (code) => { console.error('server exited', code); process.exit(code ?? 1); });
