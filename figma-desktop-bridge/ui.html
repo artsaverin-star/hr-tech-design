@@ -634,6 +634,36 @@
     .hrtech-console:hover { color: rgba(255,255,255,.7); }
     body.hrtech-console-hidden .wrap { display: none; }
     .hrtech-app textarea::placeholder { color: rgba(255,255,255,.35); }
+
+    /* ── пошаговый статус подключения (виден, пока не подключились/не всё ок) ── */
+    .hrtech-conn {
+      position: relative; z-index: 2; align-self: stretch;
+      display: flex; flex-direction: column; gap: 4px;
+      padding: 6px 8px; margin-bottom: 2px; border-radius: 10px;
+      background: rgba(0,0,0,.58); border: 1px solid rgba(255,255,255,.12);
+      -webkit-backdrop-filter: blur(5px); backdrop-filter: blur(5px);
+    }
+    .hrtech-app.hrtech-connected.hrtech-ready .hrtech-conn { display: none; }  /* всё ок → прячем, статус показывает булочка */
+    .hrtech-conn-steps { display: flex; align-items: center; gap: 10px; }
+    .hrtech-cstep {
+      display: flex; align-items: center; gap: 4px;
+      font: 600 9px/1 'Inter', -apple-system, sans-serif; letter-spacing: .01em;
+      color: rgba(255,255,255,.4); white-space: nowrap;
+    }
+    .hrtech-cstep i {
+      width: 8px; height: 8px; border-radius: 50%; flex: none;
+      background: rgba(255,255,255,.22); box-shadow: 0 0 0 2px rgba(0,0,0,.25);
+      transition: background .25s, box-shadow .25s;
+    }
+    .hrtech-cstep.active { color: #FFD479; }
+    .hrtech-cstep.active i { background: #FF9F0A; box-shadow: 0 0 7px rgba(255,159,10,.85); animation: hrtech-pulse 1s ease-in-out infinite; }
+    .hrtech-cstep.ok { color: #4ade80; }
+    .hrtech-cstep.ok i { background: #34C759; box-shadow: 0 0 7px rgba(52,199,89,.85); }
+    .hrtech-cstep.err { color: #ff6b62; }
+    .hrtech-cstep.err i { background: #E53935; box-shadow: 0 0 7px rgba(229,57,53,.85); }
+    .hrtech-conn-msg { font: 500 10px/1.35 'Inter', -apple-system, sans-serif; color: rgba(255,255,255,.82); }
+    .hrtech-conn-msg.err { color: #ffb4ae; }
+    .hrtech-conn-msg.ok { color: #6ee7a0; }
   </style>
 
   <div id="hrtech-splash">
@@ -656,6 +686,14 @@
     </button>
 
     <div class="hrtech-glass">
+    <div class="hrtech-conn" id="hrtech-conn">
+      <div class="hrtech-conn-steps">
+        <span class="hrtech-cstep" id="hcs1"><i></i>Мост</span>
+        <span class="hrtech-cstep" id="hcs2"><i></i>Связь</span>
+        <span class="hrtech-cstep" id="hcs3"><i></i>Аккаунт</span>
+      </div>
+      <div class="hrtech-conn-msg" id="hrtech-conn-msg">Шаг 1: ищу помощника…</div>
+    </div>
     <div class="hrtech-host" id="hrtech-host">
       <span class="hrtech-host-email off" id="hrtech-host-email">Account: connecting…</span>
       <div class="hrtech-ubar-row" id="hrtech-u-srow" style="display:none">
@@ -671,7 +709,7 @@
     </div>
 
     <button class="hrtech-install" id="hrtech-install" onclick="hrtechCopyInstall()">Установить движок</button>
-    <button class="hrtech-connect" id="hrtech-connect" onclick="hrtechActivate()">Connect</button>
+    <button class="hrtech-connect" id="hrtech-connect" onclick="hrtechActivate()">Подключить</button>
 
     <div class="hrtech-gen" id="hrtech-gen" style="display:none">
       <div class="hrtech-gen-top">
@@ -714,13 +752,18 @@
       setTimeout(function () { s.remove(); }, 500);
     }, 1500);
 
+    if (window.__hrtechConnStartedAt === undefined) window.__hrtechConnStartedAt = Date.now();
+    window.__hrtechPrevN = -1;
     setInterval(function () {
       var lamp = document.getElementById('hrtech-lamp');
       var st = document.getElementById('hrtech-status');
-      var act = document.getElementById('hrtech-activate');
-      if (!lamp || lamp.classList.contains('busy')) return;
       var n = (typeof window.__wsGetActiveConnections === 'function') ? window.__wsGetActiveConnections().length : 0;
-      lamp.classList.toggle('on', n > 0);
+      // грейс-таймеры для пошагового статуса: перезапускаем при смене состояния связи
+      if (n > 0 && window.__hrtechPrevN <= 0) window.__hrtechConnectedAt = Date.now();   // связь только что появилась
+      if (n === 0 && window.__hrtechPrevN > 0) window.__hrtechConnStartedAt = Date.now(); // связь только что оборвалась
+      window.__hrtechPrevN = n;
+      hrtechConnState(n);
+      if (lamp) lamp.classList.toggle('on', n > 0);
       var __app = document.querySelector('.hrtech-app');
       if (__app) __app.classList.toggle('hrtech-connected', n > 0);
       if (n > 0) {   // сразу показываем полоски-квоты (скелетон) — заполнятся, как придут данные
@@ -732,23 +775,83 @@
       }
       if (n > 0 && !window.__hrtechHostDone) hrtechRequestHost();
       if (st) { st.textContent = n > 0 ? 'Connected' : 'Offline'; st.classList.toggle('on', n > 0); }
-      if (act) { act.textContent = n > 0 ? 'Bridge Active' : 'Activate Bridge'; act.classList.toggle('on', n > 0); }
     }, 700);
 
+    // Кнопка «Подключить»: раньше была почти мёртвой (срабатывала только если скрытый
+    // #cta-btn был в состоянии Resume/Reconnect — иначе тихо ничего). Теперь честно
+    // запускает реальный скан портов и сразу показывает пошаговый статус.
     function hrtechActivate() {
-      var lamp = document.getElementById('hrtech-lamp');
       var n = (typeof window.__wsGetActiveConnections === 'function') ? window.__wsGetActiveConnections().length : 0;
-      if (n > 0) return;
-      var cta = document.getElementById('cta-btn');
-      if (cta && (cta.textContent === 'Resume' || cta.textContent === 'Reconnect') && typeof window.toggleLocalConnection === 'function') {
-        lamp.classList.add('busy');
-        window.toggleLocalConnection();
-        var tries = 0;
-        var t = setInterval(function () {
-          tries++;
-          var m = (typeof window.__wsGetActiveConnections === 'function') ? window.__wsGetActiveConnections().length : 0;
-          if (m > 0 || tries > 22) { lamp.classList.remove('busy'); clearInterval(t); }
-        }, 500);
+      if (n > 0) return;                       // уже подключены
+      window.__hrtechConnStartedAt = Date.now();  // сброс грейса → сразу «ищу помощника…»
+      if (typeof window.__wsManualScan === 'function') window.__wsManualScan();
+      else if (typeof window.__wsScanAndConnect === 'function') window.__wsScanAndConnect();
+      hrtechConnState(0);
+    }
+
+    // ── Пошаговый статус подключения на лице виджета ──────────────────────────
+    // Шаги: 1 Помощник (мост найден) · 2 Связь (сокет+рукопожатие) · 3 Аккаунт (Claude+лимиты).
+    // Каждый шаг: серый (ждём) → жёлтый (идёт) → зелёный (ок) → красный (затык + подсказка).
+    function hrtechCStep(el, state) {
+      if (!el) return;
+      el.classList.remove('active', 'ok', 'err');
+      if (state) el.classList.add(state);
+    }
+    function hrtechConnState(n) {
+      var conn = document.getElementById('hrtech-conn'); if (!conn) return;
+      if (typeof n !== 'number') n = (typeof window.__wsGetActiveConnections === 'function') ? window.__wsGetActiveConnections().length : 0;
+      var s1 = document.getElementById('hcs1'), s2 = document.getElementById('hcs2'), s3 = document.getElementById('hcs3');
+      var msg = document.getElementById('hrtech-conn-msg');
+      var paused = (typeof window.__wsIsPaused === 'function') ? window.__wsIsPaused() : false;
+      var hostDone = !!window.__hrtechHostDone;
+      var acctOk = !!window.__hrtechAccountOk;
+      var app = document.querySelector('.hrtech-app');
+      if (app) app.classList.toggle('hrtech-ready', (n > 0 && hostDone && acctOk));
+      if (!msg) return;
+
+      if (paused && n === 0) {
+        hrtechCStep(s1, ''); hrtechCStep(s2, ''); hrtechCStep(s3, '');
+        msg.className = 'hrtech-conn-msg';
+        msg.textContent = 'На паузе. Нажми «Подключить».';
+        return;
+      }
+      if (n === 0) {
+        var noHelper = (Date.now() - (window.__hrtechConnStartedAt || Date.now())) > 9000;  // грейс перед вердиктом «нет помощника»
+        hrtechCStep(s1, noHelper ? 'err' : 'active');
+        hrtechCStep(s2, ''); hrtechCStep(s3, '');
+        if (noHelper) {
+          msg.className = 'hrtech-conn-msg err';
+          msg.textContent = 'Шаг 1: помощника нет. Нажми «Установить движок» ↓';
+        } else {
+          msg.className = 'hrtech-conn-msg';
+          msg.textContent = 'Шаг 1: ищу помощника…';
+        }
+        return;
+      }
+      // связь есть → шаги 1 и 2 зелёные
+      hrtechCStep(s1, 'ok');
+      hrtechCStep(s2, 'ok');
+      if (!hostDone) {
+        var waited = Date.now() - (window.__hrtechConnectedAt || Date.now());
+        if (waited > 12000) {   // связь есть, а аккаунт/лимиты так и не пришли
+          hrtechCStep(s3, 'err');
+          msg.className = 'hrtech-conn-msg err';
+          msg.textContent = 'Шаг 3: аккаунт не приходит. Claude запущен?';
+        } else {
+          hrtechCStep(s3, 'active');
+          msg.className = 'hrtech-conn-msg';
+          msg.textContent = 'Шаг 3: читаю аккаунт и лимиты…';
+        }
+        return;
+      }
+      if (acctOk) {
+        hrtechCStep(s3, 'ok');
+        msg.className = 'hrtech-conn-msg ok';
+        msg.textContent = '✓ Готово — Булочка подключена';
+      } else {
+        hrtechCStep(s3, 'err');
+        msg.className = 'hrtech-conn-msg err';
+        msg.textContent = 'Шаг 3: Claude не залогинен — набери claude в Терминале';
       }
     }
 
@@ -833,6 +936,7 @@
     }
     window.__hrtechHostStatus = function (data) {
       window.__hrtechHostDone = true;
+      window.__hrtechAccountOk = !!(data && data.account && data.account.email);  // шаг 3: залогинен ли Claude
       var host = document.getElementById('hrtech-host');
       var email = document.getElementById('hrtech-host-email');
       host.style.display = 'flex';
@@ -2228,6 +2332,42 @@
       // Initial scan on load (fast burst). Thereafter the watchdog above keeps
       // probing while disconnected, and disconnect-triggered retries handle drops.
       wsScanAndConnect();
+    })();
+
+    // ============================================================================
+    // KEEP-ALIVE — не даём Булочке засыпать, когда дизайнер в соседней вкладке.
+    // Chromium/Electron тротлит фоновую вкладку (таймеры/обработка сообщений
+    // замирают → мост «спит»), НО не тротлит вкладку, где «играет медиа».
+    // Крутим беззвучный 8-bit WAV в цикле (приём как в NoSleep.js) → плагин
+    // считается активным, WebSocket-мост остаётся живым в фоне.
+    // ============================================================================
+    (function keepAlive() {
+      var audio = null;
+      function silentWavUrl() {
+        var sr = 8000, n = sr;                 // 1 сек тишины
+        var buf = new ArrayBuffer(44 + n), v = new DataView(buf);
+        function s(o, t){ for (var i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); }
+        s(0,'RIFF'); v.setUint32(4, 36 + n, true); s(8,'WAVE'); s(12,'fmt ');
+        v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+        v.setUint32(24, sr, true); v.setUint32(28, sr, true); v.setUint16(32, 1, true); v.setUint16(34, 8, true);
+        s(36,'data'); v.setUint32(40, n, true);
+        for (var i = 0; i < n; i++) v.setUint8(44 + i, 128);   // 128 = тишина (8-bit unsigned)
+        return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+      }
+      function ping() {
+        try {
+          if (!audio) { audio = new Audio(silentWavUrl()); audio.loop = true; }
+          var p = audio.play();
+          if (p && p.catch) p.catch(function(){});   // autoplay может отклонить до первого жеста
+        } catch (e) {}
+      }
+      // autoplay-политика: гарантированный старт на первом взаимодействии + попытка сразу
+      ['click','pointerdown','keydown','touchstart'].forEach(function(ev){
+        document.addEventListener(ev, ping, false);
+      });
+      ping();
+      // подстраховка: если система приостановила воспроизведение — возобновляем
+      setInterval(function(){ if (audio && audio.paused) ping(); }, 20000);
     })();
 
     // ============================================================================
