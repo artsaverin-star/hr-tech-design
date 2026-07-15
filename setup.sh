@@ -43,6 +43,15 @@ echo "· Команды /hrtech, /hrtech-digest и база знаний под�
 #    (Опрос очереди бесплатный — токены тратятся только на реальные задачи.)
 PLIST="$HOME/Library/LaunchAgents/design.hrtech.bulochka.runner.plist"
 mkdir -p "$HOME/Library/LaunchAgents"
+# Папки node и claude — чтобы фоновый демон их ВИДЕЛ. LaunchAgent стартует с
+# урезанным PATH, а node часто стоит в nvm/fnm/volta/asdf/~/.local/bin (не в
+# /opt/homebrew/bin). Здесь node/claude уже резолвятся (проверки выше прошли) —
+# кладём их реальные папки в начало PATH плиста.
+NODE_DIR="$(cd "$(dirname "$(command -v node)")" 2>/dev/null && pwd)"
+CLAUDE_DIR="$(cd "$(dirname "$(command -v claude)")" 2>/dev/null && pwd)"
+AGENT_PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+[ -n "$CLAUDE_DIR" ] && [ "$CLAUDE_DIR" != "$NODE_DIR" ] && AGENT_PATH="$CLAUDE_DIR:$AGENT_PATH"
+[ -n "$NODE_DIR" ] && AGENT_PATH="$NODE_DIR:$AGENT_PATH"
 cat > "$PLIST" <<PL
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -58,7 +67,7 @@ cat > "$PLIST" <<PL
   <key>StandardOutPath</key><string>/tmp/hrtech-runner.log</string>
   <key>StandardErrorPath</key><string>/tmp/hrtech-runner.log</string>
   <key>EnvironmentVariables</key><dict>
-    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>PATH</key><string>$AGENT_PATH</string>
   </dict>
 </dict></plist>
 PL

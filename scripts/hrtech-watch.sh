@@ -10,9 +10,30 @@ CMD=/tmp/hrtech-cmds
 mkdir -p "$CMD"
 CPID=""
 
+# ── Надёжный поиск node и claude ─────────────────────────────────────────────
+# LaunchAgent стартует с урезанным PATH; node/claude часто лежат в nvm/fnm/volta/
+# asdf/~/.local/bin/~/.claude — которых там нет. Без этого демон молча падает на
+# «nohup: node: No such file or directory» и мост не поднимается. Дополняем PATH
+# известными местами и резолвим абсолютные пути (само-лечится без правки plist).
+for _d in \
+  /opt/homebrew/bin /usr/local/bin \
+  "$HOME/.local/bin" "$HOME/bin" "$HOME/.claude/local" \
+  "$HOME/.volta/bin" "$HOME/.asdf/shims" \
+  "$HOME"/.nvm/versions/node/*/bin \
+  "$HOME"/.local/share/fnm/node-versions/*/installation/bin \
+  "$HOME"/n/bin /usr/local/n/versions/node/*/bin \
+  /usr/bin /bin; do
+  [ -d "$_d" ] || continue
+  case ":$PATH:" in *":$_d:"*) ;; *) PATH="$PATH:$_d" ;; esac
+done
+export PATH
+NODE_BIN="$(command -v node 2>/dev/null || echo node)"
+CLAUDE_BIN="$(command -v claude 2>/dev/null || echo claude)"
+echo "· node=$NODE_BIN  claude=$CLAUDE_BIN"
+
 start_driver() {
   if ! pgrep -f hrtech-driver.mjs >/dev/null; then
-    nohup node "$DIR/scripts/hrtech-driver.mjs" >/tmp/hrtech-driver.log 2>&1 &
+    nohup "$NODE_BIN" "$DIR/scripts/hrtech-driver.mjs" >/tmp/hrtech-driver.log 2>&1 &
     sleep 3
   fi
 }
@@ -127,7 +148,7 @@ EOF2
     fi
     echo "$(date +%H:%M:%S) · в очереди: $N — запускаю Claude ($M)"
     cd "$DIR" || true
-    claude -p "/hrtech" --model "$M" --settings '{"effortLevel":"medium"}' --allowedTools "mcp__figma-hrtech__*,Bash(sleep:*)" >> /tmp/hrtech-claude.log 2>&1 &
+    "$CLAUDE_BIN" -p "/hrtech" --model "$M" --settings '{"effortLevel":"medium"}' --allowedTools "mcp__figma-hrtech__*,Bash(sleep:*)" >> /tmp/hrtech-claude.log 2>&1 &
     CPID=$!
     RUN_START=$(date +%s)
     EXEC_BASE=$(grep " START " /tmp/hrtech-exec.log 2>/dev/null | grep -cv "task_queue');return {n:" || echo 0)
