@@ -845,10 +845,10 @@
       hrtechCStep(s2, 'ok');
       if (!hostDone) {
         var waited = Date.now() - (window.__hrtechConnectedAt || Date.now());
-        if (waited > 12000) {   // связь есть, а аккаунт/лимиты так и не пришли
-          hrtechCStep(s3, 'err');
-          msg.className = 'hrtech-conn-msg err';
-          msg.textContent = 'Шаг 3: аккаунт не приходит. Claude запущен?';
+        if (waited > 12000) {   // связь есть — Булочка работает; аккаунт/лимиты не пришли (часто API-биллинг)
+          hrtechCStep(s3, 'ok');
+          msg.className = 'hrtech-conn-msg ok';
+          msg.textContent = '✓ Подключено — Булочка работает. Лимиты видны при входе подпиской.';
         } else {
           hrtechCStep(s3, 'active');
           msg.className = 'hrtech-conn-msg';
@@ -861,9 +861,10 @@
         msg.className = 'hrtech-conn-msg ok';
         msg.textContent = '✓ Готово — Булочка подключена';
       } else {
-        hrtechCStep(s3, 'err');
-        msg.className = 'hrtech-conn-msg err';
-        msg.textContent = 'Шаг 3: Claude не залогинен — набери claude в Терминале';
+        // мост подключён и работает; OAuth-аккаунта нет (API-биллинг или не вошёл подпиской) — НЕ ошибка
+        hrtechCStep(s3, 'ok');
+        msg.className = 'hrtech-conn-msg ok';
+        msg.textContent = '✓ Подключено — Булочка работает. Лимиты видны при входе подпиской.';
       }
     }
 
