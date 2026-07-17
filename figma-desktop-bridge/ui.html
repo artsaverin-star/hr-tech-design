@@ -28,7 +28,7 @@
       font-size: 11px;
       background: var(--figma-color-bg, #2c2c2c);
       color: var(--figma-color-text, rgba(255, 255, 255, 0.9));
-      padding: 4px 12px;
+      padding: 0;   /* виджет = картинка, без тёмной рамки; отступы консоли — на .wrap */
       user-select: none;
     }
 
@@ -50,6 +50,8 @@
       flex-direction: column;
       gap: 4px;
       width: 100%;
+      box-sizing: border-box;
+      padding: 6px 12px;   /* дев-консоль держит свои отступы (body теперь без padding) */
     }
 
     /* ===== Row 1 — status + CTA + icons (always visible) ===== */
@@ -487,7 +489,7 @@
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       background: #0e0f12; color: #fff;
       padding: 6px; display: flex; flex-direction: column; gap: 4px;
-      min-height: 112px; justify-content: flex-start;
+      min-height: 96px; justify-content: flex-start;   /* 150×96 ≈ аспект сцены 260×167 (1.557) → картинка без обрезки */
       position: relative; overflow: hidden; isolation: isolate;
     }
     .hrtech-app button, .hrtech-app input, .hrtech-app textarea, .hrtech-app select {
@@ -573,7 +575,10 @@
 
     .hrtech-gen {
       display: flex; flex-direction: column; gap: 6px;
-      padding: 9px 12px; border-radius: 12px; background: rgba(255,255,255,.05);
+      padding: 8px 10px; border-radius: 12px;
+      position: relative; z-index: 2;
+      background: rgba(0,0,0,.58); border: 1px solid rgba(255,255,255,.12);
+      -webkit-backdrop-filter: blur(5px); backdrop-filter: blur(5px);  /* тёмная плашка — лейбл/Stop не тонут в сцене */
     }
     .hrtech-gen-label { font-size: 12px; font-weight: 500; color: rgba(255,255,255,.5); }
     .hrtech-gen.generating .hrtech-gen-label { color: #fff; }
@@ -639,19 +644,19 @@
     .hrtech-conn {
       position: relative; z-index: 2; align-self: stretch;
       display: flex; flex-direction: column; gap: 4px;
-      padding: 6px 8px; margin-bottom: 2px; border-radius: 10px;
+      padding: 6px 5px; margin-bottom: 2px; border-radius: 10px;
       background: rgba(0,0,0,.58); border: 1px solid rgba(255,255,255,.12);
       -webkit-backdrop-filter: blur(5px); backdrop-filter: blur(5px);
     }
     .hrtech-app.hrtech-connected.hrtech-ready .hrtech-conn { display: none; }  /* всё ок → прячем, статус показывает булочка */
-    .hrtech-conn-steps { display: flex; align-items: center; gap: 10px; }
+    .hrtech-conn-steps { display: flex; align-items: center; gap: 3px; }
     .hrtech-cstep {
-      display: flex; align-items: center; gap: 4px;
-      font: 600 9px/1 'Inter', -apple-system, sans-serif; letter-spacing: .01em;
+      display: flex; align-items: center; gap: 2px;
+      font: 600 8px/1 'Inter', -apple-system, sans-serif; letter-spacing: 0;
       color: rgba(255,255,255,.4); white-space: nowrap;
     }
     .hrtech-cstep i {
-      width: 8px; height: 8px; border-radius: 50%; flex: none;
+      width: 6px; height: 6px; border-radius: 50%; flex: none;
       background: rgba(255,255,255,.22); box-shadow: 0 0 0 2px rgba(0,0,0,.25);
       transition: background .25s, box-shadow .25s;
     }
@@ -675,6 +680,8 @@
       pointer-events: none;
     }
     .hrtech-app.hrtech-connected .hrtech-ver-badge { left: 42px; }  /* уступаем угол кнопке ⟳ */
+    .hrtech-app:not(.hrtech-connected) .hrtech-ver-badge { left: auto; right: 8px; }  /* offline: не ложиться на «Подключить» */
+    .hrtech-app.hrtech-busy .hrtech-ver-badge, .hrtech-app.hrtech-busy .hrtech-sync { display: none; }  /* задача идёт → угол не мешает прогрессу */
   </style>
 
   <div id="hrtech-splash">
@@ -691,7 +698,7 @@
       <div class="hrtech-lamp" id="hrtech-lamp"></div>
     </div>
 
-    <button class="hrtech-repair" id="hrtech-repair" onclick="hrtechRepair()">⚠️ Движок устарел — Починить</button>
+    <button class="hrtech-repair" id="hrtech-repair" onclick="hrtechRepair()">Починить движок</button>
     <button class="hrtech-sync" id="hrtech-sync" onclick="hrtechKnSync()" title="Синхронизировать с командой" aria-label="Синхронизировать">
       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
     </button>
@@ -702,7 +709,7 @@
       <div class="hrtech-conn-steps">
         <span class="hrtech-cstep" id="hcs1"><i></i>Мост</span>
         <span class="hrtech-cstep" id="hcs2"><i></i>Связь</span>
-        <span class="hrtech-cstep" id="hcs3"><i></i>Аккаунт</span>
+        <span class="hrtech-cstep" id="hcs3"><i></i>Вход</span>
       </div>
       <div class="hrtech-conn-msg" id="hrtech-conn-msg">Шаг 1: ищу помощника…</div>
     </div>
@@ -778,7 +785,7 @@
       if (lamp) lamp.classList.toggle('on', n > 0);
       var __app = document.querySelector('.hrtech-app');
       if (__app) __app.classList.toggle('hrtech-connected', n > 0);
-      if (n > 0) {   // сразу показываем полоски-квоты (скелетон) — заполнятся, как придут данные
+      if (n > 0 && !window.__hrtechNoUsage) {   // сразу показываем полоски-квоты (скелетон) — заполнятся, как придут данные
         var _h = document.getElementById('hrtech-host'); if (_h) _h.style.display = 'flex';
         ['hrtech-u-srow', 'hrtech-u-wrow'].forEach(function (id) {
           var r = document.getElementById(id);
@@ -787,6 +794,12 @@
       }
       if (n > 0 && !window.__hrtechHostDone) hrtechRequestHost();
       if (st) { st.textContent = n > 0 ? 'Connected' : 'Offline'; st.classList.toggle('on', n > 0); }
+      // Дублёр ResizeObserver: тик сам замечает смену высоты виджета (offline 123 ↔ connected 96,
+      // рост conn-плашки, прогресс задачи) и перепосылает RESIZE_UI — окно всегда «под картинку».
+      if (__app && typeof sendResize === 'function') {
+        var __h = __app.offsetHeight;
+        if (__h !== window.__hrtechLastAppH) { window.__hrtechLastAppH = __h; sendResize(); }
+      }
     }, 700);
 
     // Кнопка «Подключить»: раньше была почти мёртвой (срабатывала только если скрытый
@@ -817,8 +830,12 @@
       var paused = (typeof window.__wsIsPaused === 'function') ? window.__wsIsPaused() : false;
       var hostDone = !!window.__hrtechHostDone;
       var acctOk = !!window.__hrtechAccountOk;
+      var waitedMs = Date.now() - (window.__hrtechConnectedAt || Date.now());
+      // ready = связь есть и статус хоста «устаканился» (пришёл, либо ждать больше нечего).
+      // acctOk НЕ обязателен: API-биллинг (account=null) — рабочее состояние, плашка не должна висеть вечно.
+      var settled = hostDone || (n > 0 && waitedMs > 12000);
       var app = document.querySelector('.hrtech-app');
-      if (app) app.classList.toggle('hrtech-ready', (n > 0 && hostDone && acctOk));
+      if (app) app.classList.toggle('hrtech-ready', (n > 0 && settled));
       if (!msg) return;
 
       if (paused && n === 0) {
@@ -844,11 +861,10 @@
       hrtechCStep(s1, 'ok');
       hrtechCStep(s2, 'ok');
       if (!hostDone) {
-        var waited = Date.now() - (window.__hrtechConnectedAt || Date.now());
-        if (waited > 12000) {   // связь есть — Булочка работает; аккаунт/лимиты не пришли (часто API-биллинг)
+        if (waitedMs > 12000) {   // связь есть — Булочка работает; аккаунт/лимиты не пришли (часто API-биллинг)
           hrtechCStep(s3, 'ok');
           msg.className = 'hrtech-conn-msg ok';
-          msg.textContent = '✓ Подключено — Булочка работает. Лимиты видны при входе подпиской.';
+          msg.textContent = '✓ Подключено — Булочка работает';
         } else {
           hrtechCStep(s3, 'active');
           msg.className = 'hrtech-conn-msg';
@@ -864,7 +880,7 @@
         // мост подключён и работает; OAuth-аккаунта нет (API-биллинг или не вошёл подпиской) — НЕ ошибка
         hrtechCStep(s3, 'ok');
         msg.className = 'hrtech-conn-msg ok';
-        msg.textContent = '✓ Подключено — Булочка работает. Лимиты видны при входе подпиской.';
+        msg.textContent = '✓ Подключено — Булочка работает';
       }
     }
 
@@ -963,6 +979,13 @@
       var u = data.usage || null;
       if (u) window.__hrtechLastUsage = u;
       var uu = u || window.__hrtechLastUsage || null;
+      window.__hrtechNoUsage = !uu;   // квот не будет (API-биллинг) → тик не должен включать скелетон заново
+      if (!uu) {
+        ['hrtech-u-srow', 'hrtech-u-wrow'].forEach(function (id) {
+          var r = document.getElementById(id);
+          if (r) { r.classList.remove('hrtech-loading'); r.style.display = 'none'; }
+        });
+      }
       hrtechBar('hrtech-u-srow', 'hrtech-u-sfill', 'hrtech-u-spct', uu ? (uu.five_hour || uu.session) : null);
       hrtechBar('hrtech-u-wrow', 'hrtech-u-wfill', 'hrtech-u-wpct', uu ? (uu.seven_day || uu.weekly) : null);
     };
@@ -1028,7 +1051,7 @@
     (function () { var __vb = document.getElementById('hrtech-ver-badge'); if (__vb) __vb.textContent = 'v' + HRTECH_UI_VERSION; })();
     function hrtechRepair() {
       var b = document.getElementById('hrtech-repair');
-      if (b) b.textContent = 'Чиню… мост перезапустится';
+      if (b) b.textContent = 'Чиню…';
       try {
         var conns = (typeof window.__wsGetActiveConnections === 'function') ? window.__wsGetActiveConnections() : [];
         for (var i = 0; i < conns.length; i++) {
@@ -1174,6 +1197,8 @@
         gen.classList.remove('generating');
         gen.classList.remove('determinate');
       }
+      var appBusy = document.querySelector('.hrtech-app');
+      if (appBusy) appBusy.classList.toggle('hrtech-busy', gen.style.display !== 'none');
       if (!(m.status && m.status.state === 'processing')) {
         if (stepEl) stepEl.style.display = 'none';
         var det2 = document.getElementById('hrtech-gen-detail');
@@ -2158,7 +2183,7 @@
 
             if (message.type === 'HRTECH_REPAIR_RESULT') {
               var rb = document.getElementById('hrtech-repair');
-              if (rb) rb.textContent = (message.data && message.data.started) ? '✓ Чиню — подожди ~10 сек' : 'Не вышло — обнови вручную';
+              if (rb) rb.textContent = (message.data && message.data.started) ? '✓ Чиню, ~10 сек' : 'Не вышло — обнови вручную';
               return;
             }
 
@@ -2398,10 +2423,10 @@
     // Cloud pairing is an independent row triggered by the cloud icon.
     // ============================================================================
 
-    // Fixed 240px width matches Figma right-side nav min.
+    // Width 150 = widget «под картинку»: 150×96 ≈ аспект сцен булочки (260×167).
     // Height grows freely with content. If the plugin extends past Figma's
     // visible UI, the user drags the plugin window to reveal what's clipped.
-    var PLUGIN_WIDTH = 180; // HR TECH
+    var PLUGIN_WIDTH = 150; // HR TECH
 
     function sendResize() {
       // Force a layout pass so measurements reflect the current visible rows.
@@ -2429,12 +2454,17 @@
       });
     }
 
-    // Observe the wrap (actual content), not body, so size changes from any
-    // row toggle fire a resize whether the rows grew or shrank.
+    // Observe BOTH content roots: .wrap (dev console) and .hrtech-app (the widget).
+    // .wrap is display:none by default (offsetHeight 0, observer never fires) — so the
+    // widget's own offline→connected height change (123→96) must be watched directly,
+    // otherwise the last load-time resize (offline layout) sticks forever.
     if (typeof ResizeObserver !== 'undefined') {
       var _wrapObserve = function() {
+        var ro = new ResizeObserver(sendResize);
         var wrap = document.querySelector('.wrap');
-        if (wrap) { var ro = new ResizeObserver(sendResize); ro.observe(wrap); }
+        if (wrap) ro.observe(wrap);
+        var app = document.querySelector('.hrtech-app');
+        if (app) ro.observe(app);
       };
       _wrapObserve();
     }
