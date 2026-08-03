@@ -8,7 +8,9 @@ LOG=/tmp/bulochka-repair.log
 {
   echo "=== repair $(date) in $DIR ==="
   cd "$DIR" || exit 1
-  git pull --ff-only 2>&1 || echo "git pull: пропущено/ошибка"
+  # Явные origin/main — не зависим от upstream-конфига клона (видели
+  # «Cannot fast-forward to multiple branches» на машинах дизайнеров).
+  git pull --ff-only origin main 2>&1 || echo "git pull: пропущено/ошибка"
   # Пересобрать бандл только если есть тулчейн (у мейнтейнера). Дизайнерам не нужно —
   # готовый runtime/bin/bridge.mjs приходит из git.
   if [ -x node_modules/.bin/esbuild ] && [ -f runtime/build.sh ]; then

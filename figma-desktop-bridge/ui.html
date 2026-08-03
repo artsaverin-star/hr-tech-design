@@ -2221,7 +2221,11 @@
 
             if (message.type === 'HRTECH_REPAIR_RESULT') {
               var rb = document.getElementById('hrtech-repair');
-              if (rb) rb.textContent = (message.data && message.data.started) ? '✓ Чиню, ~10 сек' : 'Не вышло — обнови вручную';
+              if (rb) {
+                rb.textContent = (message.data && message.data.started) ? '✓ Чиню, ~10 сек' : 'Не вышло — обнови вручную';
+                // Вернуть кнопке обычный вид — иначе «Чиню» залипает навсегда
+                setTimeout(function() { rb.textContent = 'Починить движок'; }, 20000);
+              }
               return;
             }
 
