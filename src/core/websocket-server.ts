@@ -17,8 +17,9 @@ import { WebSocketServer as WSServer, WebSocket } from 'ws';
 import { EventEmitter } from 'events';
 import { createServer as createHttpServer, IncomingMessage, ServerResponse } from 'http';
 import type { Server as HttpServer } from 'http';
-import { readFileSync } from 'fs';
+import { readFileSync, mkdirSync, writeFileSync } from 'fs';
 import { join } from 'path';
+import { homedir } from 'os';
 import { spawn } from 'child_process';
 import { createChildLogger } from './logger.js';
 import { PACKAGE_ROOT } from './resolve-package-root.js';
@@ -35,7 +36,7 @@ try {
 
 // Bulochka feature version — держать в синхроне с globalThis.hrtechVersion в code.js.
 // Плагин сравнивает свою версию с этой; при расхождении показывает кнопку «Починить».
-const HRTECH_VERSION = '1.12.0';
+const HRTECH_VERSION = '1.13.0';
 
 const logger = createChildLogger({ component: 'websocket-server' });
 
@@ -286,6 +287,7 @@ export class FigmaWebSocketServer extends EventEmitter {
                 pid: process.pid,
                 serverVersion: SERVER_VERSION,
                 hrtechVersion: HRTECH_VERSION,
+                figmaToken: !!process.env.FIGMA_ACCESS_TOKEN,
                 startedAt: this._startedAt,
               },
             }));
@@ -395,6 +397,30 @@ export class FigmaWebSocketServer extends EventEmitter {
         } catch (e) {
           try { ws.send(JSON.stringify({ type: 'HRTECH_REPAIR_RESULT', data: { started: false, error: e instanceof Error ? e.message : String(e) } })); } catch {}
         }
+        return;
+      }
+
+      // HR TECH: дизайнер вставил личный Figma-токен в виджете. Включаем REST-инструменты
+      // прямо сейчас (env) и сохраняем в ~/.hrtech/figma-token, чтобы пережить перезапуск
+      // моста — при старте local.ts читает этот файл, если env пуст.
+      if (message.type === 'SET_FIGMA_TOKEN') {
+        const token = typeof (message as { token?: unknown }).token === 'string'
+          ? ((message as { token: string }).token).trim() : '';
+        const looksValid = token.startsWith('fig') && token.length >= 20;
+        let saved = false;
+        if (looksValid) {
+          process.env.FIGMA_ACCESS_TOKEN = token;
+          try {
+            const dir = join(homedir(), '.hrtech');
+            mkdirSync(dir, { recursive: true });
+            writeFileSync(join(dir, 'figma-token'), token, { mode: 0o600 });
+            saved = true;
+          } catch (e) {
+            logger.warn({ error: e instanceof Error ? e.message : String(e) }, 'Figma token accepted (env only) — could not persist to ~/.hrtech');
+          }
+          logger.info({ persisted: saved }, 'Figma access token set from plugin widget');
+        }
+        try { ws.send(JSON.stringify({ type: 'FIGMA_TOKEN_ACK', data: { ok: looksValid, saved } })); } catch {}
         return;
       }
 

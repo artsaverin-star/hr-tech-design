@@ -3635,6 +3635,18 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
  * Main entry point
  */
 async function main() {
+	// Личный Figma-токен: если env пуст, берём из ~/.hrtech/figma-token — его кладёт
+	// setup.sh или виджет Булочки (SET_FIGMA_TOKEN). Включает REST-инструменты:
+	// комментарии, скрины через API, поиск по опубликованной библиотеке.
+	if (!process.env.FIGMA_ACCESS_TOKEN) {
+		try {
+			const t = readFileSync(join(homedir(), ".hrtech", "figma-token"), "utf8").trim();
+			if (t) process.env.FIGMA_ACCESS_TOKEN = t;
+		} catch {
+			// файла нет — REST-инструменты просто остаются выключенными
+		}
+	}
+
 	const server = new LocalFigmaConsoleMCP();
 
 	// Handle graceful shutdown. A hard backstop guarantees the process exits even

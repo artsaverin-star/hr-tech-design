@@ -26,9 +26,21 @@ if [ ! -f "$SERVER" ]; then
 fi
 
 # 3. Подключение MCP к Claude Code (user scope — работает из любой папки)
+#    Если в ~/.hrtech/figma-token лежит личный Figma-токен (figd_…) — включаем REST-инструменты:
+#    комментарии из файла, скрины через API, поиск компонентов по опубликованной библиотеке.
+TOKEN_FILE="$HOME/.hrtech/figma-token"
+ENV_ARGS=()
+if [ -s "$TOKEN_FILE" ]; then
+  ENV_ARGS=(--env "FIGMA_ACCESS_TOKEN=$(tr -d '[:space:]' < "$TOKEN_FILE")")
+  echo "· Figma-токен найден — комментарии и REST-инструменты включены"
+fi
 claude mcp remove figma-hrtech -s user >/dev/null 2>&1 || true
-claude mcp add figma-hrtech -s user -- node "$SERVER" >/dev/null
+claude mcp add figma-hrtech -s user "${ENV_ARGS[@]}" -- node "$SERVER" >/dev/null
 echo "· Мост figma-hrtech подключён к Claude Code"
+if [ ! -s "$TOKEN_FILE" ]; then
+  echo "  (опционально: положи Figma-токен в ~/.hrtech/figma-token и перезапусти setup.sh —"
+  echo "   Булочка научится читать комментарии и искать по библиотеке через REST)"
+fi
 
 # 4. Слэш-команда /hrtech + база знаний (симлинк на репо — обновляются git pull)
 mkdir -p ~/.claude/commands
