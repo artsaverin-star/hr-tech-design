@@ -49,7 +49,16 @@ teach the system; everything else (the user-scope `/hrtech`, headless runs) read
 ## Editing rules to teach the system
 
 1. Edit `claude/commands/hrtech.md` (task rules) or `claude/commands/hrds-knowledge.md` (component/pattern reference).
-2. Bump the version in **THREE** places, иначе виджет навсегда покажет «Починить движок»: `figma-desktop-bridge/code.js` (`hrtechVersion`), `figma-desktop-bridge/ui.html` (`hrtech-ver`, `hrtech-ver-badge`, `HRTECH_UI_VERSION`) и `src/core/websocket-server.ts` (`HRTECH_VERSION`). Виджет сравнивает версию моста из `SERVER_HELLO` со своей — расхождение зажигает баннер, и «починка» его не лечит, пока константа моста отстаёт.
+2. Bump the version в **ТРЁХ** файлах И **пересобрать бандл** — иначе виджет навсегда покажет «Починить движок»:
+   - `figma-desktop-bridge/code.js` (`hrtechVersion`)
+   - `figma-desktop-bridge/ui.html` (`hrtech-ver`, `hrtech-ver-badge`, `HRTECH_UI_VERSION`)
+   - `src/core/websocket-server.ts` (`HRTECH_VERSION`)
+   - **`npm run build:server`** → `runtime/bin/bridge.mjs` **коммитится в репо**: у дизайнеров тулчейна нет,
+     они запускают именно этот файл. Правка в `src/` без пересборки до них НЕ доедет.
+
+   Виджет сравнивает версию моста из `SERVER_HELLO` со своей — расхождение зажигает баннер. Забыть
+   пересборку хуже, чем забыть бамп: «Починить движок» делает `git pull` + перезапуск и подтягивает
+   всё тот же старый бандл, то есть баннер становится неизлечимым.
 3. The user-scope `/hrtech` is a symlink to the repo file — no copy step needed.
 4. When the user approves a new screen type, distill it into a numeric BLUEPRINT in the rules (components by
    library key + spacing + order). Do NOT save references to canvas nodes — the system must stay file-independent.
