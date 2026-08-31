@@ -10,8 +10,8 @@ The full HRDS component/pattern reference is the authoritative spec:
 
 @claude/commands/hrds-knowledge.md
 
-Shared team knowledge (verified recipes, component keys, fixes contributed by designers via the
-plugin's **«Поделиться знанием»** button) lives here and is also always in context:
+Shared team knowledge (verified recipes, component keys, fixes — designers edit this file directly;
+the plugin's sync buttons were removed in 2.1) lives here and is also always in context:
 
 @claude/knowledge/team-notes.md
 
@@ -32,7 +32,7 @@ teach the system; everything else (the user-scope `/hrtech`, headless runs) read
 ## Editing rules to teach the system
 
 1. Edit `claude/commands/hrtech.md` (task rules) or `claude/commands/hrds-knowledge.md` (component/pattern reference).
-2. Bump the version in `figma-desktop-bridge/code.js` (`hrtechVersion`) and `figma-desktop-bridge/ui.html` (`hrtech-ver`).
+2. Bump the version in **THREE** places, иначе виджет навсегда покажет «Починить движок»: `figma-desktop-bridge/code.js` (`hrtechVersion`), `figma-desktop-bridge/ui.html` (`hrtech-ver`, `hrtech-ver-badge`, `HRTECH_UI_VERSION`) и `src/core/websocket-server.ts` (`HRTECH_VERSION`). Виджет сравнивает версию моста из `SERVER_HELLO` со своей — расхождение зажигает баннер, и «починка» его не лечит, пока константа моста отстаёт.
 3. The user-scope `/hrtech` is a symlink to the repo file — no copy step needed.
 4. When the user approves a new screen type, distill it into a numeric BLUEPRINT in the rules (components by
    library key + spacing + order). Do NOT save references to canvas nodes — the system must stay file-independent.

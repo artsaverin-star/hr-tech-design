@@ -25,10 +25,45 @@ if [ ! -f "$SERVER" ]; then
   SERVER="$DIR/dist/local.js"
 fi
 
-# 3. Подключение MCP к Claude Code (user scope — работает из любой папки)
-#    Если в ~/.hrtech/figma-token лежит личный Figma-токен (figd_…) — включаем REST-инструменты:
-#    комментарии из файла, скрины через API, поиск компонентов по опубликованной библиотеке.
+# 3. Личный Figma-токен (опционально) — комментарии, скрины через API, поиск по библиотеке.
+#    Токен ОБЯЗАН быть личным: каждый дизайнер работает в своих файлах, чужой аккаунт их не увидит.
+#    Поле ввода в виджете убрано (2.1) — в окне 150 px в него было не попасть; спрашиваем здесь,
+#    один раз, и сразу открываем страницу создания, чтобы не искать «где это взять».
 TOKEN_FILE="$HOME/.hrtech/figma-token"
+TOKEN_URL="https://www.figma.com/developers/api#access-tokens"
+
+if [ ! -s "$TOKEN_FILE" ] && [ -t 0 ]; then
+  echo ""
+  echo "· Figma-токен (по желанию). С ним Булочка читает комментарии в макетах,"
+  echo "  делает скрины через API и ищет по опубликованной библиотеке. Без него"
+  echo "  всё остальное работает как обычно."
+  printf "  Открыть страницу создания токена? [Enter — да, n — пропустить] "
+  read -r ANSWER </dev/tty || ANSWER="n"
+  if [ "$ANSWER" != "n" ] && [ "$ANSWER" != "N" ]; then
+    echo "  Settings → Security → Personal access tokens → Generate new token."
+    echo "  Скоупы: File content — Read; Comments — Write; File metadata, File versions — Read;"
+    echo "  Library assets, Team library content — Read. Токен показывается ОДИН раз."
+    if command -v open >/dev/null; then open "$TOKEN_URL" >/dev/null 2>&1 || true
+    else echo "  Открой вручную: $TOKEN_URL"; fi
+    printf "  Вставь токен (figd_…) и нажми Enter, либо просто Enter чтобы пропустить: "
+    read -r NEW_TOKEN </dev/tty || NEW_TOKEN=""
+    NEW_TOKEN="$(printf '%s' "$NEW_TOKEN" | tr -d '[:space:]')"
+    if [ -n "$NEW_TOKEN" ]; then
+      case "$NEW_TOKEN" in
+        fig*)
+          mkdir -p "$(dirname "$TOKEN_FILE")"
+          printf '%s' "$NEW_TOKEN" > "$TOKEN_FILE"
+          chmod 600 "$TOKEN_FILE"
+          echo "  ✓ Сохранил в $TOKEN_FILE (только для тебя, никуда не уходит)" ;;
+        *)
+          echo "  ✗ Не похоже на токен — он начинается с figd_. Пропускаю, запусти setup.sh позже." ;;
+      esac
+    fi
+  fi
+  echo ""
+fi
+
+# 4. Подключение MCP к Claude Code (user scope — работает из любой папки)
 ENV_ARGS=()
 if [ -s "$TOKEN_FILE" ]; then
   ENV_ARGS=(--env "FIGMA_ACCESS_TOKEN=$(tr -d '[:space:]' < "$TOKEN_FILE")")
@@ -38,11 +73,11 @@ claude mcp remove figma-hrtech -s user >/dev/null 2>&1 || true
 claude mcp add figma-hrtech -s user "${ENV_ARGS[@]}" -- node "$SERVER" >/dev/null
 echo "· Мост figma-hrtech подключён к Claude Code"
 if [ ! -s "$TOKEN_FILE" ]; then
-  echo "  (опционально: положи Figma-токен в ~/.hrtech/figma-token и перезапусти setup.sh —"
-  echo "   Булочка научится читать комментарии и искать по библиотеке через REST)"
+  echo "  (без токена: комментарии и REST выключены — добавить можно в любой момент,"
+  echo "   просто запусти ./setup.sh ещё раз)"
 fi
 
-# 4. Слэш-команда /hrtech + база знаний (симлинк на репо — обновляются git pull)
+# 5. Слэш-команда /hrtech + база знаний (симлинк на репо — обновляются git pull)
 mkdir -p ~/.claude/commands
 ln -sf "$DIR/claude/commands/hrtech.md" ~/.claude/commands/hrtech.md
 ln -sf "$DIR/claude/commands/hrtech-digest.md" ~/.claude/commands/hrtech-digest.md
@@ -50,8 +85,8 @@ ln -sf "$DIR/claude/commands/hrds-knowledge.md" ~/.claude/commands/hrds-knowledg
 ln -sf "$DIR/claude/knowledge/team-notes.md" ~/.claude/commands/team-notes.md
 echo "· Команды /hrtech, /hrtech-digest и база знаний подключены"
 
-# 5. Автозапуск фонового помощника при входе в систему — чтобы задачи и синхронизация
-#    базы знаний работали САМИ, без терминала. Помощник поднимает мост; плагин к нему цепляется.
+# 6. Автозапуск фонового помощника при входе в систему — чтобы задачи выполнялись САМИ,
+#    без терминала. Помощник поднимает мост; плагин к нему цепляется.
 #    (Опрос очереди бесплатный — токены тратятся только на реальные задачи.)
 PLIST="$HOME/Library/LaunchAgents/design.hrtech.bulochka.runner.plist"
 mkdir -p "$HOME/Library/LaunchAgents"
@@ -85,7 +120,7 @@ cat > "$PLIST" <<PL
 PL
 launchctl unload "$PLIST" >/dev/null 2>&1 || true
 if launchctl load "$PLIST" >/dev/null 2>&1; then
-  echo "· Фоновый помощник добавлен в автозапуск — задачи и синк работают без терминала"
+  echo "· Фоновый помощник добавлен в автозапуск — задачи выполняются без терминала"
 else
   echo "· Автозапуск не включился — можно запускать вручную:  ./scripts/hrtech-watch.sh"
 fi

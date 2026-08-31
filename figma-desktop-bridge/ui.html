@@ -504,7 +504,6 @@
     .hrtech-app::before { background-image: var(--bake-sad); opacity:1; }
     .hrtech-app::after  { background-image: var(--bake-now, var(--bake-m_wave)); opacity:0; }
     .hrtech-app.hrtech-connected::after { opacity:1; }
-    .hrtech-app.hrtech-syncing::after { background-image: var(--bake-sync); opacity:1; }  /* синхронизация → учёная булочка */
     /* frosted-glass card holding the controls, floating over the scene */
     .hrtech-glass {
       position:relative; z-index:1;
@@ -532,17 +531,6 @@
     }
     .hrtech-install:hover { filter: brightness(1.08); }
     .hrtech-app.hrtech-connected .hrtech-install { display: none; }  /* подключено → движок стоит, прячем */
-    .hrtech-sync {
-      position:absolute; bottom:8px; left:8px; z-index:3;
-      width:26px; height:26px; border-radius:8px; cursor:pointer;
-      display:flex; align-items:center; justify-content:center; color:#fff; padding:0;
-      background:rgba(0,0,0,.5); border:1px solid rgba(255,255,255,.22);
-      -webkit-backdrop-filter:blur(4px); backdrop-filter:blur(4px);
-    }
-    .hrtech-sync:hover { background:rgba(0,0,0,.68); }
-    .hrtech-sync.spin svg { animation: hrtech-spin .8s linear infinite; }
-    @keyframes hrtech-spin { to { transform: rotate(360deg); } }
-    .hrtech-app:not(.hrtech-connected) .hrtech-sync { display: none; }
     .hrtech-repair {
       position:absolute; top:8px; left:8px; right:8px; z-index:4;
       font: inherit; font-size:11px; font-weight:600; text-align:center;
@@ -569,9 +557,64 @@
     .hrtech-pill:hover { background: rgba(255,255,255,.11); }
     .hrtech-pill .hrt-ico { width: 18px; text-align: center; flex: none; font-size: 12px; color: rgba(255,255,255,.5); }
     .hrtech-pill .hrt-arrow { margin-left: auto; color: rgba(255,255,255,.3); font-size: 12px; }
-    .hrtech-pill--primary { background: #fff; color: #111; font-weight: 600; justify-content: center; height: 36px; }
+    /* height:auto + перенос — иначе длинная подпись («Не похоже на токен…») рвётся
+       по нижней кромке: у виджета 150px и .hrtech-app{overflow:hidden}. */
+    .hrtech-pill--primary {
+      background: #fff; color: #111; font-weight: 600; justify-content: center;
+      height: auto; min-height: 36px; padding: 8px 12px;
+      line-height: 1.25; white-space: normal; text-align: center;
+    }
     .hrtech-pill--primary:hover { background: #ededed; }
     .hrtech-pill--primary.on { background: rgba(52,199,89,.16); color: #4ade80; }
+
+    /* ── Шестерёнка и панель настроек ────────────────────────────────────────
+       Единственное место, где виджет что-то спрашивает. Открывается по кнопке,
+       на время настроек окно шире (260) — в 150 px в поле ввода не попасть. */
+    .hrtech-gear {
+      position:absolute; bottom:8px; left:8px; z-index:3;
+      width:26px; height:26px; border-radius:8px; cursor:pointer;
+      display:flex; align-items:center; justify-content:center; color:#fff; padding:0;
+      background:rgba(0,0,0,.5); border:1px solid rgba(255,255,255,.22);
+      -webkit-backdrop-filter:blur(4px); backdrop-filter:blur(4px);
+    }
+    .hrtech-gear:hover { background:rgba(0,0,0,.68); }
+    .hrtech-app:not(.hrtech-connected) .hrtech-gear { display:none; }  /* без моста сохранять некуда */
+    .hrtech-app.hrtech-busy .hrtech-gear { display:none; }             /* идёт задача → угол свободен */
+    .hrtech-app.hrtech-set-open .hrtech-gear,
+    .hrtech-app.hrtech-set-open .hrtech-ver-badge { display:none; }
+
+    .hrtech-settings {
+      display:none; position:relative; z-index:2;
+      flex-direction:column; gap:8px; padding:10px;
+      border-radius:12px; background:rgba(0,0,0,.62); border:1px solid rgba(255,255,255,.12);
+      -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px);
+    }
+    .hrtech-app.hrtech-set-open .hrtech-settings { display:flex; }
+    /* пока открыты настройки — статус и прогресс не мешают */
+    .hrtech-app.hrtech-set-open .hrtech-conn,
+    .hrtech-app.hrtech-set-open .hrtech-host,
+    .hrtech-app.hrtech-set-open .hrtech-gen { display:none !important; }
+    .hrtech-set-head { display:flex; align-items:center; gap:8px; }
+    .hrtech-set-title { font:600 12px/1.2 'Inter', -apple-system, sans-serif; color:#fff; flex:1; }
+    .hrtech-set-close {
+      width:20px; height:20px; padding:0; border:none; border-radius:6px; cursor:pointer;
+      background:rgba(255,255,255,.08); color:rgba(255,255,255,.7); font-size:11px; line-height:1;
+    }
+    .hrtech-set-close:hover { background:rgba(255,255,255,.16); color:#fff; }
+    .hrtech-set-row { display:flex; align-items:baseline; gap:8px; }
+    .hrtech-set-label { font:500 11px/1.3 'Inter', -apple-system, sans-serif; color:rgba(255,255,255,.9); }
+    .hrtech-set-state { font:500 11px/1.3 'Inter', -apple-system, sans-serif; color:rgba(255,255,255,.5); margin-left:auto; }
+    .hrtech-set-state.on { color:#6ee7a0; }
+    .hrtech-set-hint { font:500 10px/1.35 'Inter', -apple-system, sans-serif; color:rgba(255,255,255,.55); }
+    .hrtech-set-msg  { font:500 10px/1.35 'Inter', -apple-system, sans-serif; color:rgba(255,255,255,.75); word-break:break-word; }
+    .hrtech-set-msg.ok  { color:#6ee7a0; }
+    .hrtech-set-msg.err { color:#ffb4ae; }
+
+    /* ── Ввод личного Figma-токена ───────────────────────────────────────────
+       Шаг разовый, но в 150px в него не попасть: поле ~130px, а подписи-ответы
+       («Не похоже на токен — нужен figd_…») длиннее кнопки. Поэтому на время
+       ввода виджет расширяется (PLUGIN_WIDTH → 260), ответы живут отдельной
+       строкой под кнопкой, а угловые ⟳ и бейдж версии убираются с дороги. */
 
     .hrtech-gen {
       display: flex; flex-direction: column; gap: 6px;
@@ -681,7 +724,7 @@
     }
     .hrtech-app.hrtech-connected .hrtech-ver-badge { left: 42px; }  /* уступаем угол кнопке ⟳ */
     .hrtech-app:not(.hrtech-connected) .hrtech-ver-badge { left: auto; right: 8px; }  /* offline: не ложиться на «Подключить» */
-    .hrtech-app.hrtech-busy .hrtech-ver-badge, .hrtech-app.hrtech-busy .hrtech-sync { display: none; }  /* задача идёт → угол не мешает прогрессу */
+    .hrtech-app.hrtech-busy .hrtech-ver-badge { display: none; }  /* задача идёт → угол не мешает прогрессу */
   </style>
 
   <div id="hrtech-splash">
@@ -692,17 +735,17 @@
   <div class="hrtech-app">
     <div class="hrtech-head">
       <span class="hrtech-title">HR TECH DESIGN</span>
-      <span class="hrtech-ver">v1.13.0</span>
+      <span class="hrtech-ver">v2.1</span>
       <span class="hrtech-spacer"></span>
       <span class="hrtech-status" id="hrtech-status">Offline</span>
       <div class="hrtech-lamp" id="hrtech-lamp"></div>
     </div>
 
     <button class="hrtech-repair" id="hrtech-repair" onclick="hrtechRepair()">Починить движок</button>
-    <button class="hrtech-sync" id="hrtech-sync" onclick="hrtechKnSync()" title="Синхронизировать с командой" aria-label="Синхронизировать">
-      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+    <button class="hrtech-gear" id="hrtech-gear" onclick="hrtechSettings(true)" title="Настройки" aria-label="Настройки">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
     </button>
-    <div class="hrtech-ver-badge" id="hrtech-ver-badge">v1.13.0</div>
+    <div class="hrtech-ver-badge" id="hrtech-ver-badge">v2.1</div>
 
     <div class="hrtech-glass">
     <div class="hrtech-conn" id="hrtech-conn">
@@ -727,12 +770,29 @@
       </div>
     </div>
 
-    <!-- Личный Figma-токен: ряд появляется только когда мост подключён, а токена на машине
-         нет. Включает комменты и REST. Токен персональный — каждый дизайнер вводит СВОЙ. -->
-    <div id="hrtech-token" style="display:none; flex-direction:column; gap:6px; margin-top:6px;">
-      <input id="hrtech-token-input" type="password" placeholder="Figma-токен (figd_…) — включит комменты"
-        style="font:inherit; font-size:11px; padding:7px 10px; border:1px solid rgba(255,255,255,.14); border-radius:10px; background:rgba(255,255,255,.05); color:#fff; box-sizing:border-box; width:100%;">
-      <button class="hrtech-pill hrtech-pill--primary" id="hrtech-token-save" onclick="hrtechTokenSave()">Сохранить токен</button>
+    <!-- Настройки открываются ТОЛЬКО по шестерёнке (2.1). Раньше поле токена вылезало само и
+         навсегда — в окне 150 px в него было не попасть. Теперь на время настроек виджет
+         становится шире (260) и показывает панель вместо статуса; закрыл — снова «под картинку». -->
+    <div class="hrtech-settings" id="hrtech-settings">
+      <div class="hrtech-set-head">
+        <span class="hrtech-set-title">Настройки</span>
+        <button class="hrtech-set-close" onclick="hrtechSettings(false)" aria-label="Закрыть">&#10005;</button>
+      </div>
+
+      <div class="hrtech-set-row">
+        <span class="hrtech-set-label">Figma-токен</span>
+        <span class="hrtech-set-state" id="hrtech-token-state">проверяю…</span>
+      </div>
+      <div class="hrtech-set-hint">Нужен, чтобы читать комментарии в макетах. Без него остальное работает.</div>
+
+      <div id="hrtech-token-edit" style="display:none; flex-direction:column; gap:6px;">
+        <input id="hrtech-token-input" type="password" placeholder="figd_…" autocomplete="off"
+          style="font:inherit; font-size:11px; padding:7px 10px; border:1px solid rgba(255,255,255,.14); border-radius:10px; background:rgba(255,255,255,.05); color:#fff; box-sizing:border-box; width:100%;">
+        <div class="hrtech-set-hint">Взять: Figma → Settings → Security → Personal access tokens</div>
+        <button class="hrtech-pill hrtech-pill--primary" onclick="hrtechTokenSave()">Сохранить</button>
+      </div>
+      <button class="hrtech-pill" id="hrtech-token-edit-btn" onclick="hrtechTokenEdit()" style="justify-content:center;">Вставить токен</button>
+      <div class="hrtech-set-msg" id="hrtech-token-msg"></div>
     </div>
 
     <button class="hrtech-install" id="hrtech-install" onclick="hrtechCopyInstall()">Установить движок</button>
@@ -752,17 +812,8 @@
     </div>
 
 
-    <div class="hrtech-kb" style="margin-top:6px; display:flex; flex-direction:column; gap:6px;">
-      <div style="display:flex; gap:6px;">
-        <button class="hrtech-pill" style="justify-content:center;" onclick="hrtechKnPull()">&#128260;&nbsp; Обновить</button>
-        <button class="hrtech-pill" id="hrtech-kn-share-btn" style="justify-content:center;" onclick="hrtechKnShareToggle()">&#10133;&nbsp; Поделиться</button>
-      </div>
-      <div id="hrtech-kn-form" style="display:none; flex-direction:column; gap:6px;">
-        <textarea id="hrtech-kn-note" rows="3" placeholder="Пиши как есть — приём, ключ, фикс. Имя подставится само, формулировки причешем потом." style="font:inherit; padding:8px 10px; border:1px solid rgba(255,255,255,.14); border-radius:10px; background:rgba(255,255,255,.05); color:#fff; resize:vertical; box-sizing:border-box; width:100%;"></textarea>
-        <button class="hrtech-pill hrtech-pill--primary" onclick="hrtechKnSend()">Отправить команде</button>
-      </div>
-    </div>
-
+    <!-- Синхронизация базы знаний (⟳ · Обновить · Поделиться) убрана из виджета (2.1):
+         Булочка = мост. Знание ходит через git и /hrtech, кнопки в окне 150px были лишними. -->
 
     <div class="hrtech-foot">
       <button class="hrtech-console" onclick="hrtechToggleConsole()">Console</button>
@@ -892,23 +943,49 @@
       }
     }
 
-    // Личный Figma-токен из виджета → мост (SET_FIGMA_TOKEN). Ряд ввода виден только
-    // в состоянии «мост подключён, токена нет»; после ✓ прячется сам.
-    window.__hrtechTokenRow = function() {
-      var row = document.getElementById('hrtech-token');
-      if (!row) return;
-      var conns = (typeof window.__wsGetActiveConnections === 'function') ? window.__wsGetActiveConnections() : [];
-      var connected = false;
-      for (var i = 0; i < conns.length; i++) {
-        if (conns[i].ws && conns[i].ws.readyState === 1) { connected = true; break; }
-      }
-      row.style.display = (connected && window.__hrtechTokenOnServer === false) ? 'flex' : 'none';
-    };
+
+    // ── Настройки (шестерёнка) ────────────────────────────────────────────────
+    // Единственное место, где виджет о чём-то спрашивает. Пока панель открыта, окно
+    // шире (см. hrtechPluginWidth) и показывает панель вместо статуса.
+    function hrtechSettings(open) {
+      var app = document.querySelector('.hrtech-app');
+      if (!app) return;
+      app.classList.toggle('hrtech-set-open', !!open);
+      if (open) { hrtechTokenState(); hrtechTokenMsg(''); }
+      else { var e = document.getElementById('hrtech-token-edit'); if (e) e.style.display = 'none'; }
+      if (typeof autoResize === 'function') autoResize();
+    }
+    // Мост говорит в SERVER_HELLO, есть ли у него токен. Пока не сказал — «проверяю…».
+    function hrtechTokenState() {
+      var st = document.getElementById('hrtech-token-state');
+      var btn = document.getElementById('hrtech-token-edit-btn');
+      if (!st) return;
+      var has = window.__hrtechTokenOnServer;
+      st.textContent = (has === undefined) ? 'проверяю…' : (has ? '✓ подключён' : 'не задан');
+      st.className = 'hrtech-set-state' + (has ? ' on' : '');
+      if (btn) btn.textContent = has ? 'Заменить токен' : 'Вставить токен';
+    }
+    function hrtechTokenEdit() {
+      var e = document.getElementById('hrtech-token-edit');
+      if (!e) return;
+      e.style.display = 'flex';
+      var i = document.getElementById('hrtech-token-input');
+      if (i) { try { i.focus(); } catch (err) {} }
+      if (typeof autoResize === 'function') autoResize();
+    }
+    function hrtechTokenMsg(text, kind) {
+      var m = document.getElementById('hrtech-token-msg');
+      if (!m) return;
+      m.textContent = text || '';
+      m.className = 'hrtech-set-msg' + (kind ? ' ' + kind : '');
+      if (typeof autoResize === 'function') autoResize();
+    }
+    window.__hrtechTokenState = hrtechTokenState;
+    window.__hrtechTokenMsg = hrtechTokenMsg;
     function hrtechTokenSave() {
       var inp = document.getElementById('hrtech-token-input');
-      var btn = document.getElementById('hrtech-token-save');
       var t = ((inp && inp.value) || '').trim();
-      if (t.indexOf('fig') !== 0 || t.length < 20) { if (btn) btn.textContent = 'Нужен личный токен figd_…'; return; }
+      if (t.indexOf('fig') !== 0 || t.length < 20) { hrtechTokenMsg('Токен начинается с figd_ — проверь, что скопировался целиком', 'err'); return; }
       var conns = (typeof window.__wsGetActiveConnections === 'function') ? window.__wsGetActiveConnections() : [];
       var sent = false;
       for (var i = 0; i < conns.length; i++) {
@@ -916,7 +993,8 @@
           try { conns[i].ws.send(JSON.stringify({ type: 'SET_FIGMA_TOKEN', token: t })); sent = true; break; } catch (e) {}
         }
       }
-      if (btn) btn.textContent = sent ? 'Сохраняю…' : 'Нет связи с мостом';
+      if (inp) inp.value = '';
+      hrtechTokenMsg(sent ? 'Сохраняю…' : 'Нет связи с мостом — открой плагин заново', sent ? '' : 'err');
     }
 
     function hrtechRequestHost() {
@@ -1048,20 +1126,6 @@
       parent.postMessage({ pluginMessage: { type: 'HRTECH_ACTION', action: action } }, '*');
     }
 
-    function hrtechKnPull() {
-      parent.postMessage({ pluginMessage: { type: 'HRTECH_KN_PULL' } }, '*');
-    }
-    function hrtechKnSync() {
-      parent.postMessage({ pluginMessage: { type: 'HRTECH_KN_SYNC' } }, '*');
-      var b = document.getElementById('hrtech-sync');
-      var app = document.querySelector('.hrtech-app');
-      if (b) b.classList.add('spin');
-      if (app) app.classList.add('hrtech-syncing');   // учёная булочка на время синка
-      setTimeout(function(){
-        if (b) b.classList.remove('spin');
-        if (app) app.classList.remove('hrtech-syncing');
-      }, 8000);
-    }
 
     // «Установить движок»: песочница плагина не может ставить сама — копируем одну команду в буфер.
     var HRTECH_INSTALL_CMD = 'curl -fsSL https://raw.githubusercontent.com/artsaverin-star/hr-tech-design/main/install.sh | bash';
@@ -1082,7 +1146,7 @@
     }
 
     // «Починить»: если движок старее плагина — просим мост обновить себя (git pull + перезапуск помощника).
-    var HRTECH_UI_VERSION = '1.13.0';
+    var HRTECH_UI_VERSION = '2.1';
     (function () { var __vb = document.getElementById('hrtech-ver-badge'); if (__vb) __vb.textContent = 'v' + HRTECH_UI_VERSION; })();
     function hrtechRepair() {
       var b = document.getElementById('hrtech-repair');
@@ -1138,18 +1202,6 @@
     hrtechScene();
     setInterval(function () { _bakeTick++; hrtechScene(); }, 4000);
 
-    function hrtechKnShareToggle() {
-      var f = document.getElementById('hrtech-kn-form');
-      if (f) f.style.display = (f.style.display === 'none' || !f.style.display) ? 'flex' : 'none';
-    }
-    function hrtechKnSend() {
-      var n = document.getElementById('hrtech-kn-note');
-      var note = n ? n.value.trim() : '';
-      if (!note) return;
-      parent.postMessage({ pluginMessage: { type: 'HRTECH_KN_SHARE', note: note } }, '*');
-      if (n) n.value = '';
-      var f = document.getElementById('hrtech-kn-form'); if (f) f.style.display = 'none';
-    }
 
     window.addEventListener('message', function (e2) {
       var a = e2.data && e2.data.pluginMessage;
@@ -2208,14 +2260,29 @@
               console.log('[MCP Bridge] Connected to server on port ' + message.data.port + ' (PID: ' + message.data.pid + ', v' + message.data.serverVersion + ')');
               var conn = activeConnections.find(function(c) { return c.ws === activeWs; });
               if (conn) conn.serverInfo = message.data;
-              // Сервер говорит, есть ли у него Figma-токен — от этого зависит ряд ввода токена
+              // Мост сообщает, есть ли у него Figma-токен — это показывают настройки
               window.__hrtechTokenOnServer = !!message.data.figmaToken;
-              if (typeof window.__hrtechTokenRow === 'function') window.__hrtechTokenRow();
+              if (typeof window.__hrtechTokenState === 'function') window.__hrtechTokenState();
               try {
                 var sv = message.data.hrtechVersion;
                 var app = document.querySelector('.hrtech-app');
                 if (app && sv) app.classList.toggle('hrtech-outdated', sv !== HRTECH_UI_VERSION);
               } catch (e) {}
+              return;
+            }
+
+            if (message.type === 'FIGMA_TOKEN_ACK' && message.data) {
+              window.__hrtechTokenOnServer = !!message.data.ok;
+              if (typeof window.__hrtechTokenState === 'function') window.__hrtechTokenState();
+              if (typeof window.__hrtechTokenMsg === 'function') {
+                window.__hrtechTokenMsg(
+                  message.data.ok ? '✓ Готово — комментарии включены' : 'Мост не принял токен — проверь, что он от Figma',
+                  message.data.ok ? 'ok' : 'err');
+              }
+              if (message.data.ok) {
+                var __te = document.getElementById('hrtech-token-edit');
+                if (__te) __te.style.display = 'none';
+              }
               return;
             }
 
@@ -2229,13 +2296,6 @@
               return;
             }
 
-            if (message.type === 'FIGMA_TOKEN_ACK' && message.data) {
-              window.__hrtechTokenOnServer = !!message.data.ok;
-              var tb = document.getElementById('hrtech-token-save');
-              if (tb) tb.textContent = message.data.ok ? '✓ Комменты и REST включены' : 'Не похоже на токен — нужен figd_…';
-              if (message.data.ok) setTimeout(function() { if (typeof window.__hrtechTokenRow === 'function') window.__hrtechTokenRow(); }, 1200);
-              return;
-            }
 
             if (message.type === 'HRTECH_HOST_STATUS' && message.data) {
               if (typeof window.__hrtechHostStatus === 'function') window.__hrtechHostStatus(message.data);
@@ -2476,7 +2536,13 @@
     // Width 150 = widget «под картинку»: 150×96 ≈ аспект сцен булочки (260×167).
     // Height grows freely with content. If the plugin extends past Figma's
     // visible UI, the user drags the plugin window to reveal what's clipped.
-    var PLUGIN_WIDTH = 150; // HR TECH
+    var PLUGIN_WIDTH = 150;       // HR TECH — «под картинку»
+    var PLUGIN_WIDTH_SET = 260;   // открыты настройки: в 150 px в поле ввода не попасть
+
+    function hrtechPluginWidth() {
+      var app = document.querySelector('.hrtech-app');
+      return (app && app.classList.contains('hrtech-set-open')) ? PLUGIN_WIDTH_SET : PLUGIN_WIDTH;
+    }
 
     function sendResize() {
       // Force a layout pass so measurements reflect the current visible rows.
@@ -2492,7 +2558,7 @@
             + (parseFloat(bs.paddingTop) || 0)
             + (parseFloat(bs.paddingBottom) || 0);
       parent.postMessage({
-        pluginMessage: { type: 'RESIZE_UI', width: PLUGIN_WIDTH, height: Math.ceil(h) }
+        pluginMessage: { type: 'RESIZE_UI', width: hrtechPluginWidth(), height: Math.ceil(h) }
       }, '*');
     }
 
@@ -2957,7 +3023,6 @@
     setInterval(function() {
       updateServerCount();
       reconcileCta();
-      if (typeof window.__hrtechTokenRow === 'function') window.__hrtechTokenRow();
       // Only refresh info if the panel is visible (cheap gate).
       var info = document.getElementById('info-panel');
       if (info && info.classList.contains('visible')) updateInfoPanel();
