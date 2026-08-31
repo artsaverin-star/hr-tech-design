@@ -21,6 +21,40 @@ import { readFileSync, mkdirSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import { spawn } from 'child_process';
+import { readdirSync } from 'fs';
+
+/**
+ * Установленные скилы — для панели «Настройки» в виджете. Скилы срабатывают сами,
+ * поэтому дизайнер не знает ни что они есть, ни какими словами их звать: показываем
+ * имя и примеры фраз. Источник — ~/.claude/skills/<name>/SKILL.md (их линкует setup.sh).
+ * Читается один раз на процесс: файлов единицы, но SERVER_HELLO шлётся на каждый коннект.
+ */
+let _skillsCache: Array<{ name: string; examples: string[] }> | null = null;
+function readInstalledSkills(): Array<{ name: string; examples: string[] }> {
+  if (_skillsCache) return _skillsCache;
+  const out: Array<{ name: string; examples: string[] }> = [];
+  try {
+    const root = join(homedir(), '.claude', 'skills');
+    for (const dir of readdirSync(root)) {
+      let md = '';
+      try { md = readFileSync(join(root, dir, 'SKILL.md'), 'utf8'); } catch { continue; }
+      const name = (md.match(/^name:\s*(.+)$/m)?.[1] || dir).trim();
+      // Примеры — буллеты из раздела «## Примеры»; нет раздела — скил покажется без них.
+      const block = md.match(/^##\s*Примеры\s*$([\s\S]*?)(?=^#|\Z)/m)?.[1] || '';
+      const examples = block
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => l.startsWith('- '))
+        .map((l) => l.slice(2).trim())
+        .slice(0, 3);
+      out.push({ name, examples });
+    }
+  } catch {
+    // папки нет (скилы не подключены) — виджет покажет это как подсказку
+  }
+  _skillsCache = out;
+  return out;
+}
 import { createChildLogger } from './logger.js';
 import { PACKAGE_ROOT } from './resolve-package-root.js';
 import type { ConsoleLogEntry } from './types/index.js';
@@ -36,7 +70,7 @@ try {
 
 // Bulochka feature version — держать в синхроне с globalThis.hrtechVersion в code.js.
 // Плагин сравнивает свою версию с этой; при расхождении показывает кнопку «Починить».
-const HRTECH_VERSION = '2.1';
+const HRTECH_VERSION = '2.2';
 
 const logger = createChildLogger({ component: 'websocket-server' });
 
@@ -288,6 +322,7 @@ export class FigmaWebSocketServer extends EventEmitter {
                 serverVersion: SERVER_VERSION,
                 hrtechVersion: HRTECH_VERSION,
                 figmaToken: !!process.env.FIGMA_ACCESS_TOKEN,
+                skills: readInstalledSkills(),
                 startedAt: this._startedAt,
               },
             }));

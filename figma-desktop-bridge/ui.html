@@ -609,6 +609,10 @@
     .hrtech-set-msg  { font:500 10px/1.35 'Inter', -apple-system, sans-serif; color:rgba(255,255,255,.75); word-break:break-word; }
     .hrtech-set-msg.ok  { color:#6ee7a0; }
     .hrtech-set-msg.err { color:#ffb4ae; }
+    .hrtech-set-sep { height:1px; background:rgba(255,255,255,.1); margin:2px 0; }
+    .hrtech-skills { display:flex; flex-direction:column; gap:7px; }
+    .hrtech-skill-name { font:600 10px/1.3 'Inter', -apple-system, sans-serif; color:rgba(255,255,255,.85); }
+    .hrtech-skill-ex { font:500 10px/1.35 'Inter', -apple-system, sans-serif; color:rgba(255,255,255,.5); }
 
     /* ── Ввод личного Figma-токена ───────────────────────────────────────────
        Шаг разовый, но в 150px в него не попасть: поле ~130px, а подписи-ответы
@@ -735,7 +739,7 @@
   <div class="hrtech-app">
     <div class="hrtech-head">
       <span class="hrtech-title">HR TECH DESIGN</span>
-      <span class="hrtech-ver">v2.1</span>
+      <span class="hrtech-ver">v2.2</span>
       <span class="hrtech-spacer"></span>
       <span class="hrtech-status" id="hrtech-status">Offline</span>
       <div class="hrtech-lamp" id="hrtech-lamp"></div>
@@ -745,7 +749,7 @@
     <button class="hrtech-gear" id="hrtech-gear" onclick="hrtechSettings(true)" title="Настройки" aria-label="Настройки">
       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
     </button>
-    <div class="hrtech-ver-badge" id="hrtech-ver-badge">v2.1</div>
+    <div class="hrtech-ver-badge" id="hrtech-ver-badge">v2.2</div>
 
     <div class="hrtech-glass">
     <div class="hrtech-conn" id="hrtech-conn">
@@ -793,6 +797,14 @@
       </div>
       <button class="hrtech-pill" id="hrtech-token-edit-btn" onclick="hrtechTokenEdit()" style="justify-content:center;">Вставить токен</button>
       <div class="hrtech-set-msg" id="hrtech-token-msg"></div>
+
+      <div class="hrtech-set-sep"></div>
+      <div class="hrtech-set-row">
+        <span class="hrtech-set-label">Что умеет</span>
+        <span class="hrtech-set-state" id="hrtech-skills-count"></span>
+      </div>
+      <div class="hrtech-set-hint">Подхватывается само — просто скажи это Клоду в терминале.</div>
+      <div class="hrtech-skills" id="hrtech-skills"></div>
     </div>
 
     <button class="hrtech-install" id="hrtech-install" onclick="hrtechCopyInstall()">Установить движок</button>
@@ -951,7 +963,7 @@
       var app = document.querySelector('.hrtech-app');
       if (!app) return;
       app.classList.toggle('hrtech-set-open', !!open);
-      if (open) { hrtechTokenState(); hrtechTokenMsg(''); }
+      if (open) { hrtechTokenState(); hrtechTokenMsg(''); hrtechSkills(); }
       else { var e = document.getElementById('hrtech-token-edit'); if (e) e.style.display = 'none'; }
       if (typeof autoResize === 'function') autoResize();
     }
@@ -980,6 +992,38 @@
       m.className = 'hrtech-set-msg' + (kind ? ' ' + kind : '');
       if (typeof autoResize === 'function') autoResize();
     }
+    // Скилы приходят от моста (он один видит ~/.claude/skills). Показываем имя и
+    // примеры фраз: скил срабатывает сам, но позвать его надо своими словами.
+    function hrtechSkills() {
+      var box = document.getElementById('hrtech-skills');
+      var cnt = document.getElementById('hrtech-skills-count');
+      if (!box) return;
+      var list = window.__hrtechSkills;
+      box.textContent = '';
+      if (!list) { if (cnt) cnt.textContent = 'проверяю…'; return; }
+      if (!list.length) {
+        if (cnt) { cnt.textContent = 'не подключены'; cnt.className = 'hrtech-set-state'; }
+        var w = document.createElement('div');
+        w.className = 'hrtech-skill-ex';
+        w.textContent = 'Запусти ./setup.sh — он их подключит.';
+        box.appendChild(w);
+        return;
+      }
+      if (cnt) { cnt.textContent = list.length + ' ' + (list.length === 1 ? 'скил' : 'скила'); cnt.className = 'hrtech-set-state on'; }
+      list.forEach(function (sk) {
+        var n = document.createElement('div');
+        n.className = 'hrtech-skill-name';
+        n.textContent = sk.name;
+        box.appendChild(n);
+        (sk.examples || []).forEach(function (e) {
+          var x = document.createElement('div');
+          x.className = 'hrtech-skill-ex';
+          x.textContent = e;
+          box.appendChild(x);
+        });
+      });
+    }
+    window.__hrtechSkillsRender = hrtechSkills;
     window.__hrtechTokenState = hrtechTokenState;
     window.__hrtechTokenMsg = hrtechTokenMsg;
     function hrtechTokenSave() {
@@ -1146,7 +1190,7 @@
     }
 
     // «Починить»: если движок старее плагина — просим мост обновить себя (git pull + перезапуск помощника).
-    var HRTECH_UI_VERSION = '2.1';
+    var HRTECH_UI_VERSION = '2.2';
     (function () { var __vb = document.getElementById('hrtech-ver-badge'); if (__vb) __vb.textContent = 'v' + HRTECH_UI_VERSION; })();
     function hrtechRepair() {
       var b = document.getElementById('hrtech-repair');
@@ -2262,7 +2306,9 @@
               if (conn) conn.serverInfo = message.data;
               // Мост сообщает, есть ли у него Figma-токен — это показывают настройки
               window.__hrtechTokenOnServer = !!message.data.figmaToken;
+              window.__hrtechSkills = message.data.skills || [];
               if (typeof window.__hrtechTokenState === 'function') window.__hrtechTokenState();
+              if (typeof window.__hrtechSkillsRender === 'function') window.__hrtechSkillsRender();
               try {
                 var sv = message.data.hrtechVersion;
                 var app = document.querySelector('.hrtech-app');
