@@ -19,6 +19,23 @@ The task playbook (zone-graph algorithm, blueprints, no-fabrication rule, status
 `claude/commands/hrtech.md` — it is the body of the `/hrtech` slash command. Edit THESE two files to
 teach the system; everything else (the user-scope `/hrtech`, headless runs) reads from them via symlink.
 
+## Skills (load on demand, unlike the two files above)
+
+`claude/skills/<name>/SKILL.md` — подгружаются САМИ, когда задача совпала с `description`, и поэтому
+не едят контекст на каждой задаче (в отличие от `hrds-knowledge.md` и `team-notes.md`, которые
+подключены всегда). `setup.sh` линкует каждую папку в `~/.claude/skills/`; новый скил подхватится
+без правки установщика.
+
+- **`hrtech-spec`** — сборка спеки-борда сценариев: грамматика в цифрах, ромбы, веер, гребёнка,
+  светофор статуса, три канонические формы conn-вектора, аудит связности после перекладки.
+- **`hrtech-mobile`** — десктоп → мобилка 375: каркас и честный вьюпорт, карта «десктопный элемент →
+  мобильный эквивалент», настоящий `Drawer [mobile]` со скримом, типографика на ДС-стилях.
+- **`hrtech-audit`** — проверка на ДС и починка: чек-лист нарушений, ограниченный скан без подвешивания
+  песочницы, правка МАСТЕРА вместо оверрайда, снятие залипших оверрайдов, список ложных срабатываний.
+
+Скилы собраны из разборов реальных задач; правило то же, что у остального: **фактов не выдумывать** —
+ключ, id или число попадают в скил, только если подтверждены источником.
+
 ## How the system works
 
 - **Plugin** (`figma-desktop-bridge/`): runs in desktop Figma, talks to the bridge over WebSocket
