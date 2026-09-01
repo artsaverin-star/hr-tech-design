@@ -11,6 +11,11 @@ LOG=/tmp/bulochka-repair.log
   # Явные origin/main — не зависим от upstream-конфига клона (видели
   # «Cannot fast-forward to multiple branches» на машинах дизайнеров).
   git pull --ff-only origin main 2>&1 || echo "git pull: пропущено/ошибка"
+  # Перелинковать знания: команды, базу и СКИЛЫ. Без этого новый скил или новая
+  # команда, приехавшие с git pull, до Claude Code не доедут — он читает только
+  # ~/.claude, а симлинка на новую папку там нет. Заодно чинится случай, когда
+  # ссылки указывают на другой клон репозитория.
+  bash "$DIR/scripts/link-knowledge.sh" 2>&1 || echo "link-knowledge: ошибка"
   # Пересобрать бандл только если есть тулчейн (у мейнтейнера). Дизайнерам не нужно —
   # готовый runtime/bin/bridge.mjs приходит из git.
   if [ -x node_modules/.bin/esbuild ] && [ -f runtime/build.sh ]; then

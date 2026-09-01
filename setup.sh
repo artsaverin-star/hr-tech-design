@@ -77,24 +77,10 @@ if [ ! -s "$TOKEN_FILE" ]; then
   echo "   просто запусти ./setup.sh ещё раз)"
 fi
 
-# 5. Слэш-команда /hrtech + база знаний (симлинк на репо — обновляются git pull)
-mkdir -p ~/.claude/commands
-ln -sf "$DIR/claude/commands/hrtech.md" ~/.claude/commands/hrtech.md
-ln -sf "$DIR/claude/commands/hrtech-digest.md" ~/.claude/commands/hrtech-digest.md
-ln -sf "$DIR/claude/commands/hrds-knowledge.md" ~/.claude/commands/hrds-knowledge.md
-ln -sf "$DIR/claude/knowledge/team-notes.md" ~/.claude/commands/team-notes.md
-echo "· Команды /hrtech, /hrtech-digest и база знаний подключены"
-
-# Скилы — подгружаются САМИ, когда задача совпала с описанием (спека, мобилка, аудит ДС).
-# Линкуем каждую папку из репо, чтобы новые скилы подхватывались без правки setup.sh.
-mkdir -p ~/.claude/skills
-SKILL_N=0
-for SKILL_DIR in "$DIR"/claude/skills/*/; do
-  [ -f "$SKILL_DIR/SKILL.md" ] || continue
-  ln -sfn "${SKILL_DIR%/}" "$HOME/.claude/skills/$(basename "$SKILL_DIR")"
-  SKILL_N=$((SKILL_N + 1))
-done
-[ "$SKILL_N" -gt 0 ] && echo "· Скилов подключено: $SKILL_N (подхватываются автоматически по смыслу задачи)"
+# 5. Слэш-команды, база знаний и скилы (симлинки на репо — обновляются git pull).
+#    Та же самая процедура вызывается из repair.sh, поэтому новое знание доезжает
+#    до дизайнера по кнопке «Починить», а не только при переустановке.
+bash "$DIR/scripts/link-knowledge.sh"
 
 # 6. Автозапуск фонового помощника при входе в систему — чтобы задачи выполнялись САМИ,
 #    без терминала. Помощник поднимает мост; плагин к нему цепляется.
