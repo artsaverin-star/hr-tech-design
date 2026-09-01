@@ -44,19 +44,23 @@ teach the system; everything else (the user-scope `/hrtech`, headless runs) read
 ## How the system works
 
 - **Plugin** (`figma-desktop-bridge/`): runs in desktop Figma, talks to the bridge over WebSocket
-  (ports 9223–9232). Buttons queue tasks into `figma.root` shared plugin data; the live widget shows
-  account, usage limits, model picker, progress, queue and Stop/Clear.
-- **Bridge server** (`dist/local.js`, MCP `figma-hrtech`): executes `figma_execute` (arbitrary Plugin
-  API JS) in desktop Figma where YS Text loads — no cloud font wall.
-- **Auto-runner** (`scripts/hrtech-watch.sh`): polls the queue, runs `claude -p "/hrtech"` per task,
-  model = the plugin's picker (Auto → Haiku for spelling, Sonnet for conversions). Hard Stop kills the run.
+  (ports 9223–9232). Виджет показывает статус подключения (Мост · Связь · Вход), лимиты, прогресс,
+  Stop и панель настроек (токен + список скилов). Кнопок-действий, которые кладут задачу в очередь,
+  в виджете НЕТ с версии 2.1 — обработчик `HRTECH_ACTION` в `code.js` жив, но продюсера у него нет;
+  дизайнер ставит задачу словами в терминале.
+- **Bridge server** (`runtime/bin/bridge.mjs` у дизайнеров, `dist/local.js` при локальной отладке;
+  MCP `figma-hrtech`): executes `figma_execute` (arbitrary Plugin API JS) in desktop Figma where
+  YS Text loads — no cloud font wall.
+- **Auto-runner** (`scripts/hrtech-watch.sh`): стартует из LaunchAgent при входе в систему. Держит мост
+  живым (`hrtech-driver.mjs`), подключает знания (`link-knowledge.sh`) и опрашивает очередь — но очередь
+  сейчас никто не наполняет (см. выше), поэтому Claude он на практике не запускает. Hard Stop работает.
 
 ## Editing rules to teach the system
 
 1. Edit `claude/commands/hrtech.md` (task rules) or `claude/commands/hrds-knowledge.md` (component/pattern reference).
 2. Bump the version в **ТРЁХ** файлах И **пересобрать бандл** — иначе виджет навсегда покажет «Починить движок»:
    - `figma-desktop-bridge/code.js` (`hrtechVersion`)
-   - `figma-desktop-bridge/ui.html` (`hrtech-ver`, `hrtech-ver-badge`, `HRTECH_UI_VERSION`)
+   - `figma-desktop-bridge/ui.html` (`hrtech-ver-badge`, `HRTECH_UI_VERSION`)
    - `src/core/websocket-server.ts` (`HRTECH_VERSION`)
    - **`npm run build:server`** → `runtime/bin/bridge.mjs` **коммитится в репо**: у дизайнеров тулчейна нет,
      они запускают именно этот файл. Правка в `src/` без пересборки до них НЕ доедет.
@@ -71,11 +75,19 @@ teach the system; everything else (the user-scope `/hrtech`, headless runs) read
 ## Build (only when changing the bridge server source)
 
 ```bash
-npm run build:local    # tsc → dist/local.js ; not needed for plugin UI or rules edits
+npm run build:server   # esbuild → runtime/bin/bridge.mjs — ЭТОТ файл коммитится и едет дизайнерам
+npm run build:local    # tsc → dist/local.js — локальная отладка, dist/ в .gitignore
 ```
+
+Правка в `src/` доезжает до дизайнеров ТОЛЬКО через `build:server` и коммит `runtime/bin/bridge.mjs`.
+Не нужно ни для правок виджета (`figma-desktop-bridge/`), ни для правок правил и знаний.
 
 ## Distribution
 
-`setup.sh` installs for a designer (checks node/claude, builds dist, `claude mcp add` user-scope, symlinks
-commands). Plugin import: Figma → Plugins → Development → Import from `figma-desktop-bridge/manifest.json`.
+`setup.sh` installs for a designer: проверяет node/claude → подключает готовый бандл
+`runtime/bin/bridge.mjs` через `claude mcp add -s user` → спрашивает Figma-токен
+(`~/.hrtech/figma-token`) → зовёт `scripts/link-knowledge.sh` (команды, база, скилы) → ставит
+LaunchAgent автозапуска помощника. Ту же линковку делает кнопка «Починить движок» и старт помощника,
+поэтому новый скил доезжает без действий дизайнера.
+Plugin import: Figma → Plugins → Development → Import from `figma-desktop-bridge/manifest.json`.
 See `ONBOARDING.md` (designers) and `HRDS-CONTRIBUTION.md` (how to extend HRDS itself).

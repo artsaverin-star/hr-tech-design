@@ -59,6 +59,6 @@ cat <<EOF
    → выбери файл (папку я открыл в Finder):
    $DIR/figma-desktop-bridge/manifest.json
 
-Дальше каждый день: открой плагин → Activate Bridge →
+Дальше каждый день: просто открой плагин (подключится сам) →
 в Терминале  cd ~/hr-tech-design && claude  → пиши задачи словами.
 EOF

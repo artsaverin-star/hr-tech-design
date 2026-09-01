@@ -70,7 +70,7 @@ try {
 
 // Bulochka feature version — держать в синхроне с globalThis.hrtechVersion в code.js.
 // Плагин сравнивает свою версию с этой; при расхождении показывает кнопку «Починить».
-const HRTECH_VERSION = '2.2';
+const HRTECH_VERSION = '2.3';
 
 const logger = createChildLogger({ component: 'websocket-server' });
 

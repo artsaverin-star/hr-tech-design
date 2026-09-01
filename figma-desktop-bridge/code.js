@@ -311,7 +311,7 @@ async function loadFontsForNode(node) {
 // Listen for requests from UI (e.g., component data requests, write operations)
 // HR TECH: built-in bounded scanner — agents MUST use this instead of hand-written walkers.
 // Fast, capped, never freezes the plugin.
-globalThis.hrtechVersion = '2.2';
+globalThis.hrtechVersion = '2.3';
 // HR TECH: mechanical content diff — source vs built mobile. Fabricated text = busted.
 globalThis.hrtechDiff = async function (srcId, dstId) {
   figma.skipInvisibleInstanceChildren = true;
@@ -406,11 +406,6 @@ figma.ui.onmessage = async (msg) => {
       figma.root.setSharedPluginData('hrtech', 'task_queue', left.length ? JSON.stringify(left) : '');
       figma.notify('HR TECH \u00b7 Task cancelled (' + left.length + ' left)');
     } catch (e) {}
-    return;
-  }
-  if (msg.type === 'HRTECH_MODEL') {
-    figma.root.setSharedPluginData('hrtech', 'model', msg.model || 'auto');
-    figma.notify('HR TECH \u00b7 Model: ' + (msg.model || 'sonnet'));
     return;
   }
   if (msg.type === 'HRTECH_STOP') {

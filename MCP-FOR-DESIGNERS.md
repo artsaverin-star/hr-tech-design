@@ -43,7 +43,7 @@ cd ~/hr-tech-design && ./setup.sh
 
 ## Каждый раз
 
-**1.** В Figma: Plugins → Development → **HR TECH DESIGN** → нажми **Activate Bridge** (лампочка зелёная). Не закрывай плагин.
+**1.** В Figma: Plugins → Development → **HR TECH DESIGN**. Мост подключится сам — на виджете загорятся чипы «Мост · Связь · Вход». Не закрывай плагин.
 
 **2.** В Терминале:
 ```

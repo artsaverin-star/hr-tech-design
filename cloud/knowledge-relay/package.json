@@ -1,9 +1,0 @@
-{
-  "name": "bulochka-knowledge-relay",
-  "version": "1.0.0",
-  "description": "Bulochka shared knowledge relay — Yandex Cloud Function over Object Storage",
-  "main": "index.js",
-  "dependencies": {
-    "@aws-sdk/client-s3": "^3.600.0"
-  }
-}

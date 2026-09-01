@@ -31,6 +31,11 @@ NODE_BIN="$(command -v node 2>/dev/null || echo node)"
 CLAUDE_BIN="$(command -v claude 2>/dev/null || echo claude)"
 echo "· node=$NODE_BIN  claude=$CLAUDE_BIN"
 
+# Знание (команды, база, скилы) подключается при каждом старте помощника. Инструкции
+# «сделай git pull и запусти линковку» никто не читает, а помощник стартует сам при входе
+# в систему — поэтому новый скил доезжает без единого действия дизайнера.
+bash "$DIR/scripts/link-knowledge.sh" >/dev/null 2>&1 || true
+
 start_driver() {
   if ! pgrep -f hrtech-driver.mjs >/dev/null; then
     nohup "$NODE_BIN" "$DIR/scripts/hrtech-driver.mjs" >/tmp/hrtech-driver.log 2>&1 &
@@ -39,11 +44,7 @@ start_driver() {
 }
 
 cat > "$CMD/_watch_tpl.json" <<'EOF'
-{"tool":"figma_execute","args":{"timeout":15000,"code":"const r=figma.root.getSharedPluginData('hrtech','task_queue');const q=r?JSON.parse(r):[];return {n: q.length, act: q[0]?q[0].action:'', model: figma.root.getSharedPluginData('hrtech','model')||'', stop: figma.root.getSharedPluginData('hrtech','stop')||'', kn: figma.root.getSharedPluginData('hrtech','kn_action')||''};"}}
-EOF
-# Запрос текста+автора заметки (base64, чтобы не экранировать произвольный ввод)
-cat > "$CMD/_kn_get.json" <<'EOF'
-{"tool":"figma_execute","args":{"timeout":15000,"code":"const b=s=>btoa(unescape(encodeURIComponent(s||'')));return {a:b(figma.root.getSharedPluginData('hrtech','kn_author')),n:b(figma.root.getSharedPluginData('hrtech','kn_note'))};"}}
+{"tool":"figma_execute","args":{"timeout":15000,"code":"const r=figma.root.getSharedPluginData('hrtech','task_queue');const q=r?JSON.parse(r):[];return {n: q.length, act: q[0]?q[0].action:'', stop: figma.root.getSharedPluginData('hrtech','stop')||''};"}}
 EOF
 cat > "$CMD/_clear_status.json" <<'EOF'
 {"tool":"figma_execute","args":{"timeout":15000,"code":"figma.root.setSharedPluginData('hrtech','status',''); figma.root.setSharedPluginData('hrtech','stop',''); const r=figma.root.getSharedPluginData('hrtech','task_queue'); if(r){const q=JSON.parse(r); q.shift(); figma.root.setSharedPluginData('hrtech','task_queue', q.length?JSON.stringify(q):'');} return {ok:true};"}}
@@ -52,10 +53,8 @@ EOF
 poll() {
   RES=$("$DIR/scripts/hrtech-call.sh" "$CMD/_watch_tpl.json" 25 2>/dev/null)
   N=$(echo "$RES" | grep -o '\\"n\\":[0-9]*' | grep -o '[0-9]*$' | head -1)
-  MODEL=$(echo "$RES" | grep -o '\\"model\\":\\"[a-z-]*' | sed 's/.*"//' | head -1)
   STOP=$(echo "$RES" | grep -o '\\"stop\\":\\"1' | head -1)
   ACT=$(echo "$RES" | grep -o '\\"act\\":\\"[a-z-]*' | sed 's/.*"//' | head -1)
-  KN=$(echo "$RES" | grep -o '\\"kn\\":\\"[a-z-]*' | sed 's/.*"//' | head -1)
 }
 
 claude_running() { [ -n "$CPID" ] && kill -0 "$CPID" 2>/dev/null; }
@@ -109,47 +108,25 @@ EOF3
     continue
   fi
 
-  # ── База знаний (кнопки плагина): pull / share ── (git, без Claude)
-  if ! claude_running && [ -n "$KN" ]; then
-    echo "$(date +%H:%M:%S) · знание: $KN"
-    KN_OUT=""
-    if [ "$KN" = "pull" ]; then
-      KN_OUT=$("$DIR/scripts/knowledge-sync.sh" pull 2>&1 | tail -1)
-    elif [ "$KN" = "sync" ]; then
-      KN_OUT=$("$DIR/scripts/knowledge-sync.sh" sync 2>&1 | tail -1)
-    elif [ "$KN" = "share" ]; then
-      GET=$("$DIR/scripts/hrtech-call.sh" "$CMD/_kn_get.json" 25 2>/dev/null)
-      A64=$(echo "$GET" | grep -o '\\"a\\":\\"[A-Za-z0-9+/=]*' | sed 's/.*"//' | head -1)
-      N64=$(echo "$GET" | grep -o '\\"n\\":\\"[A-Za-z0-9+/=]*' | sed 's/.*"//' | head -1)
-      AUTHOR=$(printf '%s' "$A64" | base64 -d 2>/dev/null); [ -z "$AUTHOR" ] && AUTHOR="designer"
-      printf '%s' "$N64" | base64 -d > /tmp/hrtech-note.txt 2>/dev/null
-      KN_OUT=$("$DIR/scripts/knowledge-sync.sh" share "$AUTHOR" /tmp/hrtech-note.txt 2>&1 | tail -1)
-      rm -f /tmp/hrtech-note.txt
-    else
-      KN_OUT="ERR: неизвестное действие ($KN)"
-    fi
-    STATUS_B64=$(printf '%s' "$KN_OUT" | base64 | tr -d '\n')
-    cat > "$CMD/_kn_done.json" <<EOF2
-{"tool":"figma_execute","args":{"timeout":15000,"code":"figma.root.setSharedPluginData('hrtech','kn_status', decodeURIComponent(escape(atob('$STATUS_B64')))); figma.root.setSharedPluginData('hrtech','kn_action',''); figma.root.setSharedPluginData('hrtech','kn_note',''); return {ok:true};"}}
-EOF2
-    "$DIR/scripts/hrtech-call.sh" "$CMD/_kn_done.json" 20 >/dev/null 2>&1
-    echo "$(date +%H:%M:%S) · знание готово: $KN_OUT"
-    sleep 1
-    continue
-  fi
-
   if ! claude_running && [ -n "$N" ] && [ "$N" -gt 0 ] 2>/dev/null; then
-    M="${MODEL:-auto}"
-    if [ "$M" = "auto" ] || [ -z "$M" ]; then
-      case "$ACT" in
-        fix-spelling) M="haiku" ;;
-        *) M="sonnet" ;;
-      esac
-    fi
+    # Пикер модели убран из виджета в 2.1 — модель выбирается по типу задачи.
+    case "$ACT" in
+      fix-spelling) M="haiku" ;;
+      *) M="sonnet" ;;
+    esac
     echo "$(date +%H:%M:%S) · в очереди: $N — запускаю Claude ($M)"
     cd "$DIR" || true
     "$CLAUDE_BIN" -p "/hrtech" --model "$M" --settings '{"effortLevel":"medium"}' --allowedTools "mcp__figma-hrtech__*,Bash(sleep:*)" >> /tmp/hrtech-claude.log 2>&1 &
     CPID=$!
+    # Если claude не нашёлся в PATH, процесс умирает мгновенно, а помощник до этой правки
+    # молча крутил перезапуск каждые три секунды. Теперь проверяем и говорим вслух.
+    sleep 1
+    if ! kill -0 "$CPID" 2>/dev/null; then
+      echo "$(date +%H:%M:%S) · claude не запустился ($CLAUDE_BIN). Проверь установку Claude Code."
+      CPID=""
+      sleep 30
+      continue
+    fi
     RUN_START=$(date +%s)
     EXEC_BASE=$(grep " START " /tmp/hrtech-exec.log 2>/dev/null | grep -cv "task_queue');return {n:" || echo 0)
   fi

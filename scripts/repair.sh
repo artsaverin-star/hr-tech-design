@@ -10,7 +10,9 @@ LOG=/tmp/bulochka-repair.log
   cd "$DIR" || exit 1
   # Явные origin/main — не зависим от upstream-конфига клона (видели
   # «Cannot fast-forward to multiple branches» на машинах дизайнеров).
-  git pull --ff-only origin main 2>&1 || echo "git pull: пропущено/ошибка"
+  # --autostash: у дизайнера почти всегда есть локальная правка team-notes.md, и без него
+  # pull молча падает, а кнопка всё равно рапортует успех.
+  git pull --autostash --ff-only origin main 2>&1 || echo "git pull: пропущено/ошибка"
   # Перелинковать знания: команды, базу и СКИЛЫ. Без этого новый скил или новая
   # команда, приехавшие с git pull, до Claude Code не доедут — он читает только
   # ~/.claude, а симлинка на новую папку там нет. Заодно чинится случай, когда

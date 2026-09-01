@@ -511,7 +511,6 @@
       width:100%; align-self:stretch;
     }
     .hrtech-head { display: none; }
-    .hrtech-kb, .hrtech-foot { display: none !important; }   /* super-minimal: Обновить/Поделиться/Console убраны (inline/later rules → !important) */
     .hrtech-connect {
       font: inherit; font-size: 11px; letter-spacing: .02em;
       padding: 6px 10px; border-radius: 8px; cursor: pointer; width: auto; align-self: flex-start;
@@ -680,11 +679,6 @@
     }
     .hrtech-model:hover { color: #fff; }
     .hrtech-model.active { background: #fff; color: #111; font-weight: 600; }
-    .hrtech-caption { font-size: 10px; font-weight: 600; letter-spacing: .08em; color: rgba(255,255,255,.5); margin: 6px 0 0; }
-    .hrtech-foot { display: flex; align-items: center; padding-top: 4px; }
-    .hrtech-console { font-size: 10px; color: rgba(255,255,255,.35); cursor: pointer; background: none; border: none; padding: 0; }
-    .hrtech-console:hover { color: rgba(255,255,255,.7); }
-    body.hrtech-console-hidden .wrap { display: none; }
     .hrtech-app textarea::placeholder { color: rgba(255,255,255,.35); }
 
     /* ── пошаговый статус подключения (виден, пока не подключились/не всё ок) ── */
@@ -739,7 +733,7 @@
   <div class="hrtech-app">
     <div class="hrtech-head">
       <span class="hrtech-title">HR TECH DESIGN</span>
-      <span class="hrtech-ver">v2.2</span>
+      <span class="hrtech-ver">v2.3</span>
       <span class="hrtech-spacer"></span>
       <span class="hrtech-status" id="hrtech-status">Offline</span>
       <div class="hrtech-lamp" id="hrtech-lamp"></div>
@@ -749,7 +743,7 @@
     <button class="hrtech-gear" id="hrtech-gear" onclick="hrtechSettings(true)" title="Настройки" aria-label="Настройки">
       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
     </button>
-    <div class="hrtech-ver-badge" id="hrtech-ver-badge">v2.2</div>
+    <div class="hrtech-ver-badge" id="hrtech-ver-badge">v2.3</div>
 
     <div class="hrtech-glass">
     <div class="hrtech-conn" id="hrtech-conn">
@@ -827,14 +821,10 @@
     <!-- Синхронизация базы знаний (⟳ · Обновить · Поделиться) убрана из виджета (2.1):
          Булочка = мост. Знание ходит через git и /hrtech, кнопки в окне 150px были лишними. -->
 
-    <div class="hrtech-foot">
-      <button class="hrtech-console" onclick="hrtechToggleConsole()">Console</button>
-    </div>
     </div>
   </div>
 
   <script>
-    document.body.classList.add('hrtech-console-hidden');
 
     setTimeout(function () {
       var s = document.getElementById('hrtech-splash');
@@ -1147,15 +1137,6 @@
       hrtechBar('hrtech-u-wrow', 'hrtech-u-wfill', 'hrtech-u-wpct', uu ? (uu.seven_day || uu.weekly) : null);
     };
 
-    function hrtechModel(m) {
-      parent.postMessage({ pluginMessage: { type: 'HRTECH_MODEL', model: m } }, '*');
-      hrtechSyncModel(m);
-    }
-    function hrtechSyncModel(m) {
-      var btns = document.querySelectorAll('.hrtech-model');
-      for (var i = 0; i < btns.length; i++) btns[i].classList.toggle('active', btns[i].getAttribute('data-m') === m);
-    }
-
     function hrtechShow() {
       if (window.__hrtechFocusNode) {
         parent.postMessage({ pluginMessage: { type: 'HRTECH_FOCUS', nodeId: window.__hrtechFocusNode } }, '*');
@@ -1190,7 +1171,7 @@
     }
 
     // «Починить»: если движок старее плагина — просим мост обновить себя (git pull + перезапуск помощника).
-    var HRTECH_UI_VERSION = '2.2';
+    var HRTECH_UI_VERSION = '2.3';
     (function () { var __vb = document.getElementById('hrtech-ver-badge'); if (__vb) __vb.textContent = 'v' + HRTECH_UI_VERSION; })();
     function hrtechRepair() {
       var b = document.getElementById('hrtech-repair');
@@ -1269,7 +1250,6 @@
       var gen = document.getElementById('hrtech-gen');
       var lbl = document.getElementById('hrtech-gen-label');
       if (!gen || !lbl) return;
-      if (m.model) hrtechSyncModel(m.model);
       var stepEl = document.getElementById('hrtech-gen-step');
       var fill = document.getElementById('hrtech-gen-fill');
       if (m.status && m.status.state === 'error') {
@@ -1376,16 +1356,7 @@
       box.style.display = 'flex';
     }
 
-    function hrtechToggleGuide() {
-      var g = document.getElementById('hrtech-guide');
-      var b = document.getElementById('hrtech-guide-btn');
-      g.classList.toggle('open'); b.classList.toggle('open');
-      if (typeof autoResize === 'function') { autoResize(); setTimeout(autoResize, 60); }
-    }
 
-    function hrtechToggleConsole() {
-      document.body.classList.toggle('hrtech-console-hidden');
-    }
   </script>
 
   <div class="wrap">
