@@ -295,7 +295,7 @@ async function loadFontsForNode(node) {
 // Listen for requests from UI (e.g., component data requests, write operations)
 // HR TECH: built-in bounded scanner — agents MUST use this instead of hand-written walkers.
 // Fast, capped, never freezes the plugin.
-globalThis.hrtechVersion = '4.21';
+globalThis.hrtechVersion = '4.22';
 
 // HR TECH: mechanical content diff — source vs built mobile. Fabricated text = busted.
 globalThis.hrtechDiff = async function (srcId, dstId) {

@@ -220,7 +220,23 @@ const serverVersion = serverSource.match(/const HRTECH_VERSION = '([^']+)'/)?.[1
 if (!uiVersion || uiVersion !== pluginVersion || uiVersion !== serverVersion) {
   throw new Error(`Version mismatch: UI=${uiVersion}, plugin=${pluginVersion}, server=${serverVersion}`);
 }
-if (uiVersion !== '4.21') throw new Error(`Expected Bulochka 4.21, got ${uiVersion}`);
+if (uiVersion !== '4.22') throw new Error(`Expected Bulochka 4.22, got ${uiVersion}`);
+
+// Настройки — таблица фактов, а не рассказ. Две регрессии, за которые уже платили:
+// статус помощника жил в трёх местах и противоречил сам себе, а карточки начинались
+// с абзацев-объяснений вместо значений.
+if (html.includes('Помощник на связи — можно работать')) {
+  throw new Error('Settings must not claim the agent is connected from a plugin↔bridge link alone');
+}
+if (!html.includes('Связь есть, но помощник на компьютере не найден')) {
+  throw new Error('Settings must name the case where the bridge runs but no agent was found on disk');
+}
+const settingsView = html.match(/<section class="hrtech-settings hrtech-view" id="b3-settings-view"[\s\S]*?<\/section>/)?.[0];
+if (!settingsView) throw new Error('Settings view is missing');
+const settingsProse = [...settingsView.matchAll(/<p>([^<]{90,})<\/p>/g)].map((match) => match[1]);
+if (settingsProse.length) {
+  throw new Error(`Settings cards must not open with explanatory prose: ${settingsProse[0].slice(0, 60)}…`);
+}
 
 const mainNav = html.match(/<nav class="b3-nav">([\s\S]*?)<\/nav>/);
 const visibleNavViews = mainNav ? [...mainNav[1].matchAll(/data-view="([^"]+)"/g)].map((match) => match[1]) : [];

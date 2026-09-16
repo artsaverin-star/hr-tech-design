@@ -2216,28 +2216,27 @@
           </section>
 
           <section class="hrtech-settings hrtech-view" id="b3-settings-view" data-view-panel="settings">
-            <div class="b3-view-head"><div><h1>Настройки</h1><p>Связь, помощник и умения — всё, что стоит проверить, если что-то не работает</p></div></div>
+            <div class="b3-view-head"><div><h1>Настройки</h1><p>Что подключено и что делать, если не работает</p></div></div>
             <div class="b3-settings-grid">
+              <!-- Настройки — таблица фактов «что → значение», а не рассказ. Объяснение остаётся
+                   только там, где без него непонятно действие (токен), и строго одной строкой.
+                   Статус помощника раньше жил в трёх местах и противоречил сам себе — теперь
+                   он один: чипы + вердикт под ними. -->
               <p class="b4-settings-group">Связь</p>
               <article class="b3-card b3-settings-card">
-                <h2>Булочка и Figma</h2>
-                <p>Булочка показывает помощнику только тот файл, который открыт у вас.</p>
+                <h2>Помощник и Figma</h2>
                 <div id="b3-connection-slot"></div>
-                <div class="b3-setting-row"><div><strong>Сейчас открыт</strong><span>файл и страница, которые видит помощник</span></div><div class="b3-context-file"><strong id="b3-file-name">файл ещё не определился</strong><span>·</span><span id="b3-page-name">страница</span></div></div>
-                <div class="b3-setting-row"><div><strong>Работать только в этом файле</strong><span>Булочка не переключится на другой открытый файл</span></div><div id="b3-lock-slot"></div></div>
-                <div id="b4-connect-slot"></div>
-                <p class="b3-card-note b4-connect-note">Булочка заново поищет помощника на этом компьютере. Если не найдёт — откройте Codex CLI или Claude Code и попросите поработать с этим файлом.</p>
-              </article>
-              <article class="b3-card b3-settings-card">
-                <h2>Помощник</h2>
-                <p>Булочка работает и с Codex CLI, и с Claude Code — нужен любой один.</p>
                 <div id="b3-host-slot"></div>
-                <div class="b3-setting-row"><div><strong>Нашла на компьютере</strong><span>проверяет при каждом подключении</span></div><span id="b3-codex-meta">проверяю…</span></div>
+                <div class="b3-setting-row"><div><strong>Помощник</strong><span>Codex CLI или Claude Code — нужен любой один</span></div><span id="b3-codex-meta">проверяю…</span></div>
+                <div class="b3-setting-row"><div><strong>Файл</strong><span>его и видит помощник</span></div><div class="b3-context-file"><strong id="b3-file-name">файл ещё не определился</strong><span>·</span><span id="b3-page-name">страница</span></div></div>
+                <div class="b3-setting-row"><div><strong>Только этот файл</strong><span>не переключаться на другой открытый</span></div><div id="b3-lock-slot"></div></div>
+                <div id="b4-connect-slot"></div>
+                <p class="b3-card-note b4-connect-note">Помощник не найден. Откройте Codex или Claude Code и попросите поработать с этим файлом.</p>
               </article>
               <article class="b3-card b3-settings-card">
-                <h2>Доступ к комментариям</h2>
-                <p>Токен нужен, только чтобы Булочка читала комментарии в макете и искала компоненты в библиотеке HRDS. Без него всё остальное работает.</p>
-                <div class="b3-setting-row"><div><strong>Токен Figma</strong><span>хранится на вашем компьютере, в макет не попадает</span></div><span id="hrtech-token-state">проверяю…</span></div>
+                <h2>Токен Figma</h2>
+                <p>Только для комментариев и поиска по HRDS — без него всё остальное работает.</p>
+                <div class="b3-setting-row"><div><strong>Состояние</strong><span>хранится на вашем компьютере</span></div><span id="hrtech-token-state">проверяю…</span></div>
                 <div id="b3-token-edit-slot"></div>
                 <button class="b3-btn small" id="hrtech-token-edit-btn" onclick="hrtechTokenEdit()" style="margin-top:10px">Добавить токен</button>
                 <div class="hrtech-set-msg" id="hrtech-token-msg"></div>
@@ -2245,23 +2244,21 @@
 
               <p class="b4-settings-group">Умения</p>
               <article class="b3-card b3-settings-card">
-                <h2>Что умеет Булочка</h2>
-                <p>Умение подключается само — просто опишите задачу словами.</p>
-                <div class="b3-setting-row"><div><strong>Подключено</strong><span>одинаково для обоих помощников</span></div><span id="hrtech-skills-count">проверяю…</span></div>
+                <h2>Набор умений</h2>
+                <div class="b3-setting-row"><div><strong>Подключено</strong><span>нужное включается само — по тексту задачи</span></div><span id="hrtech-skills-count">проверяю…</span></div>
                 <p class="b3-card-note" id="hrtech-skills-hint"></p>
-                <button class="b3-btn small" onclick="hrtechNavigate('skills')" style="margin-top:10px">На главную</button>
+                <button class="b3-btn small" onclick="hrtechNavigate('skills')" style="margin-top:10px">Смотреть список</button>
               </article>
 
               <p class="b4-settings-group">Обслуживание</p>
               <article class="b3-card b3-settings-card">
-                <h2>Если что-то сломалось</h2>
-                <p class="b3-card-note b4-outdated-note">На компьютере стоит старая версия Булочки — нажмите «Обновить».</p>
+                <h2>Если что-то не работает</h2>
+                <p class="b3-card-note b4-outdated-note">Версия устарела — нажмите «Обновить».</p>
                 <div id="b3-engine-actions" style="display:flex;flex-wrap:wrap;gap:7px;margin-top:10px"></div>
-                <p class="b3-card-note">«Обновить» подтянет свежие знания и умения — это около 10 секунд, работа в Figma не пострадает. Помощник возьмёт их в следующую задачу.</p>
-                <p class="b3-card-note" id="hrtech-install-note">Команда установки ставит Булочку и помощника — нужна, только если Булочка никого не нашла.</p>
+                <p class="b3-card-note">«Обновить» — подтянуть свежие умения и мост. Около 10 секунд, работа в Figma не прервётся.</p>
+                <p class="b3-card-note" id="hrtech-install-note">Команда установки нужна, только если помощник не найден.</p>
+                <div class="b3-setting-row"><div><strong>Версия</strong><span>её спросит поддержка</span></div><span><span class="b6-settings-version" id="b6-settings-version">v4.22</span><span id="b3-bridge-version"></span></span></div>
                 <button class="b3-btn small" onclick="hrtechToggleDiagnostics()" style="margin-top:8px">Журнал для поддержки</button>
-                <p class="b3-card-note">Пригодится, если попросят прислать лог. Там же лежат технические переключатели — трогайте их только по просьбе поддержки.</p>
-                <div class="b3-setting-row"><div><strong>Версия</strong><span>эту цифру спросит поддержка</span></div><span><span class="b6-settings-version" id="b6-settings-version">v4.21</span><span id="b3-bridge-version"></span></span></div>
               </article>
             </div>
           </section>
@@ -2579,7 +2576,7 @@
       if (!list.length) {
         cnt.textContent = 'ни одного';
         cnt.className = 'hrtech-set-state';
-        if (hint) hint.textContent = 'Умения не подключились. Нажмите «Обновить» в разделе «Если что-то сломалось» — счётчик обновится сам, когда всё подтянется.';
+        if (hint) hint.textContent = 'Умения не подключились. Нажмите «Обновить» в разделе «Если что-то не работает» — счётчик обновится сам, когда всё подтянется.';
         return;
       }
       var tail = list.length % 10, teen = list.length % 100;
@@ -2688,13 +2685,19 @@
       var found = hrtechFoundAgents();
       var connected = (typeof window.__wsGetActiveConnections === 'function') ? window.__wsGetActiveConnections().length > 0 : false;
       window.__hrtechAccountOk = found.length > 0;
-      if (meta) meta.textContent = found.length ? found.join(' · ') : 'пока никого';
+      if (meta) meta.textContent = found.length ? found.join(' · ') : 'не найден';
       if (sideName) sideName.textContent = found.length ? found[0] : 'не найден';
       if (email) {
-        if (connected) email.textContent = 'Помощник на связи — можно работать';
+        // Честный вердикт. `connected` — это связь ПЛАГИНА с мостом, а не факт того, что
+        // помощник видит мост у себя. Раньше тут при connected всегда горело «на связи —
+        // можно работать», и дизайнер читал это как «Codex готов», хотя Codex мог не иметь
+        // figma-hrtech в конфиге вовсе. Поэтому случай «связь есть, а помощника на диске
+        // не видно» теперь называется своим именем и ведёт к кнопке «Обновить».
+        if (connected && found.length) email.textContent = found.join(' · ') + ' — на связи, можно работать';
+        else if (connected) email.textContent = 'Связь есть, но помощник на компьютере не найден. Если он не видит Булочку — нажмите «Обновить».';
         else if (found.length) email.textContent = found.join(' · ') + ' — откройте и попросите поработать с этим файлом';
-        else email.textContent = 'Помощника пока не нашла. Скопируйте команду установки в разделе «Если что-то сломалось».';
-        email.classList.toggle('off', !connected);
+        else email.textContent = 'Помощник не найден. Скопируйте команду установки в разделе «Если что-то не работает».';
+        email.classList.toggle('off', !(connected && found.length));
       }
     }
     window.__hrtechHostStatus = function (data) {
@@ -2726,7 +2729,7 @@
     }
 
     // «Обновить»: просим локальный мост подтянуть свежие runtime и skills.
-    var HRTECH_UI_VERSION = '4.21';
+    var HRTECH_UI_VERSION = '4.22';
     (function () {
       var __nodes = [document.getElementById('hrtech-ver-badge'), document.getElementById('b6-settings-version')];
       for (var __i = 0; __i < __nodes.length; __i++) {
