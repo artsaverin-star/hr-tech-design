@@ -10,24 +10,8 @@ var PLUGIN_VERSION = '1.31.0'; // Kept in sync with package.json by scripts/rele
 
 console.log('🌉 [Desktop Bridge] Plugin loaded (v' + PLUGIN_VERSION + ')');
 
-// Show minimal UI - compact status indicator
-figma.showUI(__html__, { width: 150, height: 96, visible: true, themeColors: true });
-
-// HR TECH: poll generation status + queue length for the UI
-setInterval(() => {
-  try {
-    const raw = figma.root.getSharedPluginData('hrtech', 'status');
-    const q = figma.root.getSharedPluginData('hrtech', 'task_queue');
-    figma.ui.postMessage({
-      type: 'HRTECH_STATE',
-      status: raw ? JSON.parse(raw) : null,
-      queueLen: q ? JSON.parse(q).length : 0,
-      stop: figma.root.getSharedPluginData('hrtech', 'stop') === '1',
-      model: figma.root.getSharedPluginData('hrtech', 'model') || 'auto',
-      queue: (() => { try { return (q ? JSON.parse(q) : []).slice(0, 5).map((t) => ({ t: t.label + (t.selection && t.selection[0] ? ' \u00b7 ' + t.selection[0].name.slice(0, 28) : ''), ts: t.ts })); } catch (e) { return []; } })(),
-    });
-  } catch (e) {}
-}, 2000);
+// Bulochka is a compact skills companion for the designer's own agent (Codex CLI or Claude Code).
+figma.showUI(__html__, { width: 360, height: 480, visible: true, themeColors: true });
 
 // ============================================================================
 // CONSOLE CAPTURE — Intercept console.* in the QuickJS sandbox and forward
@@ -311,7 +295,8 @@ async function loadFontsForNode(node) {
 // Listen for requests from UI (e.g., component data requests, write operations)
 // HR TECH: built-in bounded scanner — agents MUST use this instead of hand-written walkers.
 // Fast, capped, never freezes the plugin.
-globalThis.hrtechVersion = '2.3';
+globalThis.hrtechVersion = '4.21';
+
 // HR TECH: mechanical content diff — source vs built mobile. Fabricated text = busted.
 globalThis.hrtechDiff = async function (srcId, dstId) {
   figma.skipInvisibleInstanceChildren = true;
@@ -379,111 +364,17 @@ globalThis.hrtechScan = async function (nodeId, opts) {
 
 figma.ui.onmessage = async (msg) => {
 
-  // Синхронизация базы знаний убрана из плагина (2.1): Булочка = мост.
-  // Знание ходит через git и /hrtech; авто-раннер больше не получает kn_action.
-  if (msg.type === 'HRTECH_INSTALL_HINT') {
-    figma.notify('Команда установки скопирована — открой Терминал и вставь (⌘V, Enter)');
-    return;
-  }
-  // === HR TECH DESIGN v1.4: action queue with baked-in rules ===============
-  if (msg.type === 'HRTECH_FOCUS') {
-    (async () => {
-      try {
-        const n = await figma.getNodeByIdAsync(msg.nodeId);
-        if (n) {
-          figma.viewport.scrollAndZoomIntoView([n]);
-          figma.currentPage.selection = [n];
-        }
-      } catch (e) {}
-    })();
-    return;
-  }
-  if (msg.type === 'HRTECH_CANCEL') {
-    try {
-      const raw = figma.root.getSharedPluginData('hrtech', 'task_queue');
-      const queue = raw ? JSON.parse(raw) : [];
-      const left = queue.filter((t) => t.ts !== msg.ts);
-      figma.root.setSharedPluginData('hrtech', 'task_queue', left.length ? JSON.stringify(left) : '');
-      figma.notify('HR TECH \u00b7 Task cancelled (' + left.length + ' left)');
-    } catch (e) {}
-    return;
-  }
-  if (msg.type === 'HRTECH_STOP') {
-    const st = figma.root.getSharedPluginData('hrtech', 'status');
-    if (st) {
-      figma.root.setSharedPluginData('hrtech', 'stop', '1');
-      figma.notify('HR TECH \u00b7 Stop requested \u2014 finishing current step\u2026');
-    } else {
-      figma.root.setSharedPluginData('hrtech', 'task_queue', '');
-      figma.root.setSharedPluginData('hrtech', 'status', '');
-      figma.notify('HR TECH \u00b7 Queue cleared');
-    }
-    return;
-  }
-  if (msg.type === 'HRTECH_ACTION') {
-    try {
-      const RULES = {
-  "desktop-to-mobile": [
-      "ALGORITHM — universal for ANY desktop screen. Phase 1 INVENTORY: scan the source with hrtechScan('<srcId>'); fetch the FULL text of every truncated string you will transfer. Build a ZONE GRAPH of the desktop: app chrome (top bar: logo / breadcrumbs / global search / notifications / profile; sidebar nav), page header (title, subtitle, tabs, page actions), toolbar (in-page search, filters, sort), content (classify as: table | list | cards | detail-article | form | chat | dashboard), aside/inspector panels, overlays.",
-      "FRAME & SHELL — built from scratch, nothing cloned from screens: create a fresh 375-px-wide auto-layout frame (height hugs, margins 20, content 335) and insert FRESH library instances by key: 'System / Status Bar / iPhone' importComponentByKeyAsync('219da9e0b1e1df75cdf05ef6b443aab36ea224ab') on top, '❇️ Header [mobile]' set '\u0061\u0035d55d3e6028c6aa447b52b8f2cc393cbe21c376', '💠 Content · Header [mobile]' set 'fe41d6a71dcad39d0f590a8d2da113b5b00c9d0b', and 'Home Indicator' importComponentByKeyAsync('002fac881916fd9fea6caa565ba012ac59af07da') at the bottom. CLONING header/content-header from existing screens is FORBIDDEN — clones carry another screen's text overrides (e.g. «Планирование задач» leaking into a chat). Fresh instances come with neutral defaults; set every visible text explicitly from the SOURCE.",
-      "ZONE MAP · app chrome: '❇️ Header [mobile]' ALREADY CONTAINS burger, search and bell — configure them via its props/nested visibility ONLY; adding extra icon buttons next to the header is forbidden (duplicates). Burger ONLY if the desktop has a sidebar; bell with its REAL counter; search icon only if the desktop has global search. Page header: '💠 Content · Header [mobile]' — back-link = breadcrumb parent, H1 = current page/section title (NEVER a selected list item, never another product's title); tabs → '⏳ TabsMenu' with the source tab labels; page actions → '❇️ Button' M.",
-      "ZONE MAP · toolbar: in-page search → '💠 Input · Search' full width + filter '❇️ Button' (Variant=Icon). Do NOT render every desktop filter chip — filters live behind the filter button on mobile.",
-      "ZONE MAP · content by type: table → grouped list of '💠 List-Item' (group rows by the date/category column into divider rows; statuses → '❇️ Tag · Status' or caption text); cards → stacked full-width cards; detail-article → sections on the 28/20/16/14 scale, long collapsible blocks → '💠 Item → Accordion' (content swapped into ↳ Slot as a local 🔁 component); form → stacked '❇️ Input'/'❇️ Date Input' fields; chat → BLUEPRINT. AI-chat components ('Я Team AI') are LOCAL to the project file, NOT in the HRDS library — importComponentByKeyAsync fails; CLONE them from an existing instance (reference chat 1741:879387) instead. ACTIVE chat: content stack V gap 16 padding [20,16,20,16]; USER message → container left-padding 64, inside a bubble (H auto-layout, radius 20, padding 16/8, surface fill, Body/S) right-aligned; ASSISTANT message → clone 'bubble assistant — ai message' (has name header + response area) and fill via RICH TEXT RECIPE; COMPOSER → clone 'ai — text area', set source placeholder, pin above Home Indicator; disclaimer Caption/12 secondary centered below. EMPTY chat state: body is FILL+centered (frame FIXED height 812) — centered Title/M·Medium greeting ('Чем я могу помочь?'), then suggest chips as ❇️ Button Text/M/Secondary stacked vertically (one per desktop chip, full label); COMPOSER cloned & pinned at the bottom; no disclaimer needed if the desktop has none. dashboard → widgets stacked in one column. Aside/inspector panels do not fit on mobile — report them as a candidate separate screen instead of cramming them in.",
-      "RICH TEXT RECIPE (mechanical, follow exactly): to transfer a formatted answer/article, read the SOURCE text node via getStyledTextSegments(['fontName','fontSize']) and rebuild the same node: characters = full source string (with its line breaks), then re-apply bold ranges with setRangeTextStyleIdAsync using the segment offsets. Numbers and counters (badge 99, '16 источников') are CONTENT — transfer exactly, never substitute.",
-    "MASTER-DETAIL: if the source is a list/master panel PLUS an opened detail, convert the DETAIL as this screen; the master list is a separate mobile screen — build it only if it does not exist yet.",
-      "CONTENT 1:1 (hard rule): every visible string transfers EXACTLY — titles, times, statuses, counters, descriptions. Never invent, sample or silently truncate; if the SOURCE truncates, keep its truncation. Preserve numbered/bulleted lists and bold ranges (range styles). Typography only via HRDS library text styles (28/20/16/14 scale), colors only via Palette/Theme variables.",
-      "ATOMS: every visible UI atom — button, input, tab, chip, list row, icon, divider, status — must be an HRDS instance from the known catalog. Drawing rectangles/vectors that imitate UI is FORBIDDEN; plain auto-layout frames are allowed only as invisible structural containers. No suitable component → closest HRDS equivalent + TODO note in the report.",
-      "PLACEMENT & VISIBILITY: create the mobile frame RIGHT NEXT to the source (same parent, x = source.x + source.width + 200, y = source.y), name it '<source name> [mobile]'. Build skeleton first with placeholder shimmer on unfinished sections, fill zone by zone so the designer watches it grow.",
-      "VERIFY: run hrtechDiff('<srcId>','<dstId>') and fix until fabricated is empty (allowed exceptions: status-bar time, UI chrome). Check every desktop zone is either mapped or explicitly reported as omitted with a reason. Include the zone decision log (zone → mapping used) in your summary."
-  ],
-  "fix-spelling": [
-    "Fix Russian spelling, typos and punctuation in TEXT layers only.",
-    "Never rename layers, components, styles or variables; keep terminology, product names, numbers and links unchanged.",
-    "Preserve text styles, range styles (medium/bold spans), hyperlinks and bound variables on every edited node.",
-    "Typographic polish: «ёлочки» quotes, em dash, non-breaking spaces after short prepositions."
-  ],
-  "assemble-scenario": [
-    "Wrap the selected screens into one scenario row: a title plate 'Scenario N.M · name · role · task' (Inter, transparent bg) above, then screens left-to-right with exactly 24 px gaps.",
-    "Captions for screens: plain Inter text 20 px / 85% black, no Header components.",
-    "States and details go into mini-blocks after the main flow; 280 px rhythm between blocks; align to the x=40 grid of the Story page.",
-    "Move existing frames, do not duplicate them."
-  ],
-  "apply-design-system": [
-    "Replace hand-made elements with HRDS instances (❇️ components, 💠 slot fillers, icons from '!💎 Icons').",
-    "No detach. Configure only via variants, props and slot swaps.",
-    "Bind all texts to HRDS library text styles; bind fills to Palette/Theme variables; remove raw hex fills (raw fills inside DS masters are fine — do not touch).",
-    "Typography scale: 28 page title / 20 sections / 16 block headings / 14 body.",
-    "If no suitable DS component exists — leave a '⚠️ TODO' sticky note next to the element, never invent a custom one."
-  ]
-};
-      const LABELS = {"desktop-to-mobile": "Desktop → Mobile", "fix-spelling": "Fix Spelling", "assemble-scenario": "Assemble Scenario", "apply-design-system": "Apply Design System"};
-      const action = msg.action;
-      if (!RULES[action]) { figma.notify('HR TECH · Unknown action: ' + action); return; }
-      const sel = figma.currentPage.selection
-        .filter(n => ['FRAME','SECTION','COMPONENT','INSTANCE','GROUP'].includes(n.type))
-        .map(n => ({ id: n.id, name: n.name }));
-      if (!sel.length) {
-        figma.notify('HR TECH · Select a frame first — nothing queued'); return;
-      }
-      const raw = figma.root.getSharedPluginData('hrtech', 'task_queue');
-      const queue = raw ? JSON.parse(raw) : [];
-      const dupKey = action + '|' + figma.currentPage.name + '|' + sel.map(s => s.id).sort().join(',');
-      if (queue.some(t => t.action + '|' + t.page + '|' + (t.selection||[]).map(s => s.id).sort().join(',') === dupKey)) {
-        figma.notify('HR TECH · Already queued: ' + LABELS[action]); return;
-      }
-      queue.push({
-        action, label: LABELS[action], version: '1.4',
-        rules: RULES[action],
-        page: figma.currentPage.name,
-        scope: 'selection',
-        selection: sel, ts: Date.now(),
-      });
-      figma.root.setSharedPluginData('hrtech', 'task_queue', JSON.stringify(queue));
-      figma.notify('HR TECH · Queued: ' + LABELS[action] + (sel.length ? ' — ' + sel.length + ' node(s)' : ' — whole page') + ' (' + queue.length + ' in queue)');
-    } catch (e) { figma.notify('HR TECH · Error: ' + e.message); }
+  if (msg.type === 'HRTECH_UI_COMPACT_SET') {
+    figma.ui.resize(msg.collapsed === true ? 96 : 360, msg.collapsed === true ? 44 : 480);
     return;
   }
 
+  // Булочка = мост и знания. Задачи ставит дизайнер словами своему помощнику,
+  // очереди и автозапуска внутри плагина нет (убраны в 4.13).
+  if (msg.type === 'HRTECH_INSTALL_HINT') {
+    figma.notify('Команда установки скопирована — откройте Терминал и вставьте (⌘V, Enter)');
+    return;
+  }
 
   // ============================================================================
   // EXECUTE_CODE - Arbitrary code execution (Power Tool)
@@ -492,11 +383,9 @@ figma.ui.onmessage = async (msg) => {
     // HR TECH: live activity feed — surface what the agent is doing right now
     try {
       const codeStr = String(msg.code || '');
-      if (!codeStr.includes("task_queue');return {n:")) {
-        const mfirst = codeStr.match(/\/\/\s*([^\n]{3,90})/);
-        const lbl = mfirst ? mfirst[1].trim() : codeStr.replace(/\s+/g, ' ').slice(0, 70);
-        figma.ui.postMessage({ type: 'HRTECH_ACTIVITY', label: lbl, ts: Date.now() });
-      }
+      const mfirst = codeStr.match(/\/\/\s*([^\n]{3,90})/);
+      const lbl = mfirst ? mfirst[1].trim() : codeStr.replace(/\s+/g, ' ').slice(0, 70);
+      figma.ui.postMessage({ type: 'HRTECH_ACTIVITY', label: lbl, ts: Date.now() });
     } catch (e) {}
 
     try {
@@ -3324,6 +3213,19 @@ figma.ui.onmessage = async (msg) => {
   else if (msg.type === 'GET_FILE_INFO') {
     try {
       var selection = figma.currentPage.selection;
+      var selectionInfo = [];
+      for (var si = 0; si < Math.min(selection.length, 20); si++) {
+        try {
+          var selectedNode = selection[si];
+          selectionInfo.push({
+            id: selectedNode.id,
+            name: selectedNode.name,
+            type: selectedNode.type,
+            width: typeof selectedNode.width === 'number' ? selectedNode.width : 0,
+            height: typeof selectedNode.height === 'number' ? selectedNode.height : 0,
+          });
+        } catch (e) {}
+      }
       figma.ui.postMessage({
         type: 'GET_FILE_INFO_RESULT',
         requestId: msg.requestId,
@@ -3334,6 +3236,7 @@ figma.ui.onmessage = async (msg) => {
           currentPage: figma.currentPage.name,
           currentPageId: figma.currentPage.id,
           selectionCount: selection ? selection.length : 0,
+          selection: selectionInfo,
           pluginVersion: PLUGIN_VERSION,
           editorType: __editorType
         }
@@ -3353,7 +3256,11 @@ figma.ui.onmessage = async (msg) => {
   // RESIZE_UI - Dynamically resize the plugin window (e.g., Cloud Mode toggle)
   // ============================================================================
   else if (msg.type === 'RESIZE_UI') {
-    figma.ui.resize(msg.width || 120, msg.height || 36);
+    var requestedWidth = Number(msg.width);
+    var requestedHeight = Number(msg.height);
+    var safeWidth = Number.isFinite(requestedWidth) ? Math.max(360, Math.min(1100, Math.round(requestedWidth))) : 360;
+    var safeHeight = Number.isFinite(requestedHeight) ? Math.max(480, Math.min(900, Math.round(requestedHeight))) : 480;
+    figma.ui.resize(safeWidth, safeHeight);
   }
 
   // ============================================================================
@@ -3378,7 +3285,7 @@ figma.ui.onmessage = async (msg) => {
       });
       // Short delay to let the response message be sent before reload
       setTimeout(function() {
-        figma.showUI(__html__, { width: 150, height: 96, visible: true, themeColors: true });
+        figma.showUI(__html__, { width: 360, height: 480, visible: true, themeColors: true });
       }, 100);
     } catch (error) {
       var errorMsg = error && error.message ? error.message : String(error);

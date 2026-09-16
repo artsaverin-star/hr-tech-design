@@ -17,8 +17,8 @@ import { WebSocketServer as WSServer, WebSocket } from 'ws';
 import { EventEmitter } from 'events';
 import { createServer as createHttpServer, IncomingMessage, ServerResponse } from 'http';
 import type { Server as HttpServer } from 'http';
-import { readFileSync, mkdirSync, writeFileSync } from 'fs';
-import { join } from 'path';
+import { readFileSync, mkdirSync, writeFileSync, accessSync, constants as fsConstants } from 'fs';
+import { join, delimiter } from 'path';
 import { homedir } from 'os';
 import { spawn } from 'child_process';
 import { readdirSync } from 'fs';
@@ -26,7 +26,7 @@ import { readdirSync } from 'fs';
 /**
  * Установленные скилы — для панели «Настройки» в виджете. Скилы срабатывают сами,
  * поэтому дизайнер не знает ни что они есть, ни какими словами их звать: показываем
- * имя и примеры фраз. Источник — ~/.claude/skills/<name>/SKILL.md (их линкует setup.sh).
+ * имя и примеры фраз. Источник — $CODEX_HOME/skills/<name>/SKILL.md (их линкует setup.sh).
  * Читается один раз на процесс: файлов единицы, но SERVER_HELLO шлётся на каждый коннект.
  */
 let _skillsCache: Array<{ name: string; examples: string[] }> | null = null;
@@ -34,7 +34,7 @@ function readInstalledSkills(): Array<{ name: string; examples: string[] }> {
   if (_skillsCache) return _skillsCache;
   const out: Array<{ name: string; examples: string[] }> = [];
   try {
-    const root = join(homedir(), '.claude', 'skills');
+    const root = join(process.env.CODEX_HOME || join(homedir(), '.codex'), 'skills');
     for (const dir of readdirSync(root)) {
       let md = '';
       try { md = readFileSync(join(root, dir, 'SKILL.md'), 'utf8'); } catch { continue; }
@@ -55,6 +55,28 @@ function readInstalledSkills(): Array<{ name: string; examples: string[] }> {
   _skillsCache = out;
   return out;
 }
+
+/**
+ * Ищем помощника на диске по имени бинаря. Виджет показывает «Нашла на компьютере»
+ * для ОБОИХ помощников, поэтому одной проверки codex мало: карточка «Помощник»
+ * обещает «и Codex CLI, и Claude Code» — значит и искать надо оба.
+ * PATH + пользовательские места установки каждого из них.
+ */
+function findLocalAgentBinary(name: 'codex' | 'claude'): string | null {
+  const home = homedir();
+  const candidates = (process.env.PATH || '').split(delimiter).filter(Boolean).map((dir) => join(dir, name));
+  candidates.push(join(home, '.local', 'bin', name));
+  if (name === 'codex') {
+    candidates.push('/Applications/ChatGPT.app/Contents/Resources/codex');
+  } else {
+    // локальная установка Claude Code (`claude migrate-installer`)
+    candidates.push(join(home, '.claude', 'local', 'claude'));
+  }
+  for (const candidate of candidates) {
+    try { accessSync(candidate, fsConstants.X_OK); return candidate; } catch { /* keep looking */ }
+  }
+  return null;
+}
 import { createChildLogger } from './logger.js';
 import { PACKAGE_ROOT } from './resolve-package-root.js';
 import type { ConsoleLogEntry } from './types/index.js';
@@ -70,7 +92,7 @@ try {
 
 // Bulochka feature version — держать в синхроне с globalThis.hrtechVersion в code.js.
 // Плагин сравнивает свою версию с этой; при расхождении показывает кнопку «Починить».
-const HRTECH_VERSION = '2.3';
+const HRTECH_VERSION = '4.21';
 
 const logger = createChildLogger({ component: 'websocket-server' });
 
@@ -170,9 +192,16 @@ export class FigmaWebSocketServer extends EventEmitter {
    * When set, the active file is LOCKED to this fileKey: SELECTION_CHANGE /
    * PAGE_CHANGE from other files no longer steal focus, and sendCommand targets
    * it by default. Cleared explicitly (unpinFile) or when the pinned file
-   * disconnects. This is the fix for "another open file keeps stealing active".
+   * disconnects (UI pins) or the owning MCP process ends (tool pins). A
+   * tool-owned pin survives transient disconnects and therefore fails closed.
    */
   private _pinnedFileKey: string | null = null;
+  /**
+   * A tool-owned pin belongs to this MCP/Claude session and is authoritative.
+   * Plugin UI lock broadcasts may manage UI-owned pins, but must never retarget
+   * a running tool session when another Figma product connects or reconnects.
+   */
+  private _pinSource: 'tool' | 'ui' | null = null;
   private pendingRequests: Map<string, PendingRequest> = new Map();
   private requestIdCounter = 0;
   private options: WebSocketServerOptions;
@@ -411,8 +440,7 @@ export class FigmaWebSocketServer extends EventEmitter {
 
     // Unsolicited data from plugin (FILE_INFO, events, forwarded data)
     if (message.type) {
-      // HR TECH: plugin asks for host status (local Claude account + usage limits).
-      // Universal: reads THIS machine's ~/.claude.json and Keychain — each designer sees their own account.
+      // Bulochka: plugin asks whether this designer's local Codex is available.
       if (message.type === 'HRTECH_HOST_STATUS_REQUEST') {
         this.collectHrtechHostStatus()
           .then((data) => { try { ws.send(JSON.stringify({ type: 'HRTECH_HOST_STATUS', data })); } catch {} })
@@ -420,12 +448,35 @@ export class FigmaWebSocketServer extends EventEmitter {
         return;
       }
 
-      // «Починить»: обновить движок (git pull → свежий бандл/скрипты) и перезапустить
-      // помощника. Скрипт detached — переживает перезапуск моста.
+      // «Обновить»: подтянуть свежие знания и умения (git pull → link-knowledge.sh).
+      // Скрипт detached — переживает перезапуск моста. Когда он закончил, сбрасываем
+      // кэш умений и досылаем виджету правду: иначе счётчик «Подключено» врал бы до
+      // перезапуска помощника, хотя кнопка обещала обновление.
       if (message.type === 'HRTECH_REPAIR') {
         try {
           const script = join(PACKAGE_ROOT, 'scripts', 'repair.sh');
           const child = spawn('bash', [script], { detached: true, stdio: 'ignore' });
+          child.on('error', () => { /* сообщили о старте — отчёт о финале просто не придёт */ });
+          child.on('exit', (code) => {
+            _skillsCache = null;
+            const skills = readInstalledSkills();
+            try {
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                  type: 'HRTECH_REPAIR_RESULT',
+                  data: { started: true, finished: true, ok: code === 0, skills },
+                }));
+              }
+            } catch {}
+            this.collectHrtechHostStatus()
+              .then((data) => {
+                try {
+                  if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'HRTECH_HOST_STATUS', data }));
+                } catch {}
+              })
+              .catch(() => {});
+            logger.info({ code, skills: skills.length }, 'HRTECH repair finished');
+          });
           child.unref();
           try { ws.send(JSON.stringify({ type: 'HRTECH_REPAIR_RESULT', data: { started: true } })); } catch {}
           logger.info({ script }, 'HRTECH repair started');
@@ -465,8 +516,8 @@ export class FigmaWebSocketServer extends EventEmitter {
       if (message.type === 'PIN_FILE' || message.type === 'UNPIN_FILE') {
         const found = this.findClientByWs(ws);
         if (found) {
-          if (message.type === 'PIN_FILE') this.pinFile(found.fileKey);
-          else this.unpinFile();
+          if (message.type === 'PIN_FILE') this.pinFile(found.fileKey, 'ui');
+          else this.unpinFile('ui');
           const pinned = this._pinnedFileKey === found.fileKey;
           try {
             ws.send(JSON.stringify({ type: 'PIN_STATE', data: { pinned, fileKey: found.fileKey, fileName: found.client.fileInfo.fileName } }));
@@ -587,32 +638,22 @@ export class FigmaWebSocketServer extends EventEmitter {
    * This is the critical multi-client identification step: each plugin reports
    * its fileKey on connect, allowing the server to track multiple files.
    */
-  /** HR TECH: collect local Claude Code account + usage limits for the plugin widget. */
+  /** Bulochka: collect local agent (Codex CLI / Claude Code) and installed-skill availability. */
   private async collectHrtechHostStatus(): Promise<Record<string, unknown>> {
-    const out: Record<string, unknown> = { account: null, usage: null, platform: process.platform };
-    try {
-      const os = await import('node:os');
-      const fs = await import('node:fs');
-      const cfg = JSON.parse(fs.readFileSync(os.homedir() + '/.claude.json', 'utf8'));
-      const acc = (cfg as Record<string, any>).oauthAccount;
-      if (acc) out.account = { email: acc.emailAddress || null, org: acc.organizationName || null };
-    } catch { /* not signed in or no config */ }
-    if (process.platform === 'darwin') {
-      try {
-        const { execFileSync } = await import('node:child_process');
-        const raw = execFileSync('security', ['find-generic-password', '-s', 'Claude Code-credentials', '-w'], { encoding: 'utf8', timeout: 3000 }).trim();
-        const creds = JSON.parse(raw) as Record<string, any>;
-        const token = creds?.claudeAiOauth?.accessToken;
-        if (token) {
-          const resp = await fetch('https://api.anthropic.com/api/oauth/usage', {
-            headers: { Authorization: 'Bearer ' + token, 'anthropic-beta': 'oauth-2025-04-20' },
-          });
-          if (resp.ok) out.usage = await resp.json();
-          else out.usageError = 'HTTP ' + resp.status;
-        }
-      } catch (e) { out.usageError = e instanceof Error ? e.message.slice(0, 120) : 'keychain error'; }
-    }
-    return out;
+    const codexBinary = findLocalAgentBinary('codex');
+    const claudeBinary = findLocalAgentBinary('claude');
+    const installedSkills = readInstalledSkills();
+    return {
+      platform: process.platform,
+      agents: {
+        codex: { installed: !!codexBinary },
+        claude: { installed: !!claudeBinary },
+      },
+      skills: {
+        installed: installedSkills.length,
+        names: installedSkills.map((skill) => skill.name),
+      },
+    };
   }
 
   private handleFileInfo(data: any, ws: WebSocket): void {
@@ -634,12 +675,15 @@ export class FigmaWebSocketServer extends EventEmitter {
     // (shouldn't happen in practice — each plugin instance is per-file)
     const previousEntry = this.findClientByWs(ws);
     if (previousEntry && previousEntry.fileKey !== fileKey) {
+      const preserveToolPin =
+        this._pinnedFileKey === previousEntry.fileKey && this._pinSource === 'tool';
       this.clients.delete(previousEntry.fileKey);
-      if (this._activeFileKey === previousEntry.fileKey) {
+      if (this._activeFileKey === previousEntry.fileKey && !preserveToolPin) {
         this._activeFileKey = null;
       }
-      if (this._pinnedFileKey === previousEntry.fileKey) {
+      if (this._pinnedFileKey === previousEntry.fileKey && !preserveToolPin) {
         this._pinnedFileKey = null;
+        this._pinSource = null;
       }
       logger.info(
         { oldFileKey: previousEntry.fileKey, newFileKey: fileKey },
@@ -683,10 +727,12 @@ export class FigmaWebSocketServer extends EventEmitter {
       gracePeriodTimer: null,
     });
 
-    // Most recently connected file becomes active (user just opened the plugin there).
-    // On bulk reconnect the order is non-deterministic, but the first user interaction
-    // (SELECTION_CHANGE or PAGE_CHANGE) will correct the active file immediately.
-    this._activeFileKey = fileKey;
+    // Most recently connected file becomes active unless this MCP session is
+    // pinned. A late connection/reconnect from another open product must not
+    // make active-file getters disagree with command routing.
+    if (!this._pinnedFileKey || this._pinnedFileKey === fileKey) {
+      this._activeFileKey = fileKey;
+    }
 
     logger.info(
       {
@@ -741,14 +787,18 @@ export class FigmaWebSocketServer extends EventEmitter {
         this.clients.delete(fileKey);
         this.rejectPendingRequestsForFile(fileKey, 'WebSocket client disconnected');
 
-        // If the pinned/locked file disconnected, release the lock so the
-        // bridge can fall back to another connected file.
-        if (this._pinnedFileKey === fileKey) {
+        // UI-owned locks follow the open Figma windows. A tool-owned pin is
+        // fail-closed and survives a transient disconnect: non-targeted tools
+        // must error until the exact task file reconnects, never fall through
+        // to another product during the command's 90-second retry window.
+        const preserveToolPin = this._pinnedFileKey === fileKey && this._pinSource === 'tool';
+        if (this._pinnedFileKey === fileKey && !preserveToolPin) {
           this._pinnedFileKey = null;
+          this._pinSource = null;
         }
 
         // If active file disconnected, switch to another connected file
-        if (this._activeFileKey === fileKey) {
+        if (this._activeFileKey === fileKey && !preserveToolPin) {
           this._activeFileKey = null;
           for (const [fk, c] of this.clients) {
             if (c.ws.readyState === WebSocket.OPEN) {
@@ -1082,6 +1132,13 @@ export class FigmaWebSocketServer extends EventEmitter {
    * Set the active file by fileKey. Returns true if the file is connected.
    */
   setActiveFile(fileKey: string): boolean {
+    if (this._pinnedFileKey && this._pinnedFileKey !== fileKey) {
+      logger.warn(
+        { requestedFileKey: fileKey, pinnedFileKey: this._pinnedFileKey },
+        'Active file switch rejected while this MCP session is pinned'
+      );
+      return false;
+    }
     const client = this.clients.get(fileKey);
     if (client && client.ws.readyState === WebSocket.OPEN) {
       this._activeFileKey = fileKey;
@@ -1105,12 +1162,27 @@ export class FigmaWebSocketServer extends EventEmitter {
    * targets the pinned file by default. Also sets it active so reads/screenshots
    * target it too. Returns true if the file is connected.
    */
-  pinFile(fileKey: string): boolean {
+  pinFile(fileKey: string, source: 'tool' | 'ui' = 'tool'): boolean {
     const client = this.clients.get(fileKey);
     if (client && client.ws.readyState === WebSocket.OPEN) {
+      if (source === 'ui' && this._pinSource === 'tool') {
+        // UI lock state is broadcast to every MCP server. It may acknowledge
+        // the already-targeted file, but cannot move a headless task's
+        // authoritative session pin to another open product.
+        if (this._pinnedFileKey === fileKey) {
+          this._activeFileKey = fileKey;
+          return true;
+        }
+        logger.warn(
+          { requestedFileKey: fileKey, pinnedFileKey: this._pinnedFileKey },
+          'Plugin UI pin ignored while this MCP session has a tool-owned pin'
+        );
+        return false;
+      }
       this._pinnedFileKey = fileKey;
+      this._pinSource = source;
       this._activeFileKey = fileKey;
-      logger.info({ fileKey, fileName: client.fileInfo.fileName }, 'File pinned (locked active)');
+      logger.info({ fileKey, fileName: client.fileInfo.fileName, source }, 'File pinned (locked active)');
       this.emit('activeFileChanged', { fileKey, fileName: client.fileInfo.fileName });
       return true;
     }
@@ -1118,11 +1190,20 @@ export class FigmaWebSocketServer extends EventEmitter {
   }
 
   /** Release the file lock. Active file then follows interaction again. */
-  unpinFile(): void {
-    if (this._pinnedFileKey) {
-      logger.info({ fileKey: this._pinnedFileKey }, 'File unpinned (lock released)');
-      this._pinnedFileKey = null;
+  unpinFile(source: 'tool' | 'ui' = 'tool'): boolean {
+    if (source === 'ui' && this._pinSource === 'tool') {
+      logger.warn(
+        { pinnedFileKey: this._pinnedFileKey },
+        'Plugin UI unpin ignored while this MCP session has a tool-owned pin'
+      );
+      return false;
     }
+    if (this._pinnedFileKey) {
+      logger.info({ fileKey: this._pinnedFileKey, source }, 'File unpinned (lock released)');
+      this._pinnedFileKey = null;
+      this._pinSource = null;
+    }
+    return true;
   }
 
   /** The fileKey the bridge is locked to, or null if not locked. */
@@ -1202,6 +1283,8 @@ export class FigmaWebSocketServer extends EventEmitter {
     }
     this.clients.clear();
     this._activeFileKey = null;
+    this._pinnedFileKey = null;
+    this._pinSource = null;
 
     // Close WS server first (handles WebSocket connections)
     if (this.wss) {

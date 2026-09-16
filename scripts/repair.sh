@@ -1,7 +1,6 @@
 #!/bin/bash
-# Bulochka · самолечение движка — вызывается сервером моста по кнопке «Починить».
-# Подтягивает свежую версию (git pull → новый бандл+скрипты) и перезапускает помощника,
-# который поднимает мост заново. Дизайнеру ничего в терминале делать не нужно.
+# Bulochka · обновление skills и Figma-моста по кнопке «Обновить».
+# Подтягивает свежую версию; новая задача помощника подхватит обновлённые умения и runtime.
 set -u
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 LOG=/tmp/bulochka-repair.log
@@ -13,11 +12,15 @@ LOG=/tmp/bulochka-repair.log
   # --autostash: у дизайнера почти всегда есть локальная правка team-notes.md, и без него
   # pull молча падает, а кнопка всё равно рапортует успех.
   git pull --autostash --ff-only origin main 2>&1 || echo "git pull: пропущено/ошибка"
-  # Перелинковать знания: команды, базу и СКИЛЫ. Без этого новый скил или новая
-  # команда, приехавшие с git pull, до Claude Code не доедут — он читает только
-  # ~/.claude, а симлинка на новую папку там нет. Заодно чинится случай, когда
-  # ссылки указывают на другой клон репозитория.
+  # Перелинковать умения HR Tech помощнику (Codex и/или Claude Code). Заодно чинится
+  # случай, когда ссылки указывают на другой клон репозитория.
   bash "$DIR/scripts/link-knowledge.sh" 2>&1 || echo "link-knowledge: ошибка"
+  # Переподключить Figma-мост как MCP-сервер figma-hrtech. Самая частая поломка у дизайнера —
+  # помощник не видит мост (секции [mcp_servers.figma-hrtech] нет в конфиге, или в ней путь
+  # к другому клону/несуществующему node). Раньше это чинил только setup.sh, то есть терминал;
+  # теперь чинит кнопка «Обновить». Отдельным вызовом — чтобы после git pull отработала
+  # СВЕЖАЯ версия скрипта, а не та, что была на диске в момент старта repair.sh.
+  bash "$DIR/scripts/connect-mcp.sh" 2>&1 || echo "connect-mcp: ошибка"
   # Пересобрать бандл только если есть тулчейн (у мейнтейнера). Дизайнерам не нужно —
   # готовый runtime/bin/bridge.mjs приходит из git.
   if [ -x node_modules/.bin/esbuild ] && [ -f runtime/build.sh ]; then
@@ -25,15 +28,19 @@ LOG=/tmp/bulochka-repair.log
   else
     echo "build: пропущено (бандл из git)"
   fi
-  # (Пере)запустить помощника — он поднимет свежий мост.
-  PLIST="$HOME/Library/LaunchAgents/design.hrtech.bulochka.runner.plist"
-  if [ -f "$PLIST" ]; then
-    launchctl unload "$PLIST" 2>/dev/null || true
-    launchctl load "$PLIST" 2>/dev/null && echo "помощник перезапущен (launchd)"
-  else
-    pkill -f "scripts/hrtech-watch.sh" 2>/dev/null || true
-    nohup bash "$DIR/scripts/hrtech-watch.sh" >/tmp/hrtech-runner.log 2>&1 &
-    echo "помощник запущен напрямую"
+  # Старый queue-runner удалён из продукта, а plist со старой установки продолжает
+  # указывать на несуществующий скрипт. Кнопка «Обновить» — единственный путь, по которому
+  # эта миграция доедет до дизайнера, поэтому сносим plist и живые процессы целиком.
+  LEGACY_PLIST="$HOME/Library/LaunchAgents/design.hrtech.bulochka.runner.plist"
+  LEGACY_LABEL="design.hrtech.bulochka.runner"
+  if [ -f "$LEGACY_PLIST" ] || pgrep -f hrtech-watch.sh >/dev/null 2>&1; then
+    launchctl bootout "gui/$(id -u)/$LEGACY_LABEL" 2>/dev/null || true
+    launchctl unload -w "$LEGACY_PLIST" 2>/dev/null || true
+    rm -f "$LEGACY_PLIST"
+    pkill -f hrtech-watch.sh 2>/dev/null || true
+    pkill -f hrtech-driver.mjs 2>/dev/null || true
+    echo "старый фоновый диспетчер удалён"
   fi
+  echo "обновление готово; умения применятся в новой задаче помощника"
   echo "=== repair done ==="
 } >> "$LOG" 2>&1

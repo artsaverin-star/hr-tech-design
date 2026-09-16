@@ -49,13 +49,21 @@ Layers: If your code creates helper frames, placeholder nodes, or intermediate l
 				.describe(
 					"Execution timeout in milliseconds (default: 5000, max: 30000)",
 				),
+			fileKey: z
+				.string()
+				.regex(/^[A-Za-z0-9_-]+$/)
+				.optional()
+				.describe(
+					"Exact connected Figma fileKey to execute against. Pin it for long multi-step work so active-file changes cannot retarget the call.",
+				),
 		},
-		async ({ code, timeout }) => {
+		async ({ code, timeout, fileKey }) => {
 			try {
 				const connector = await getDesktopConnector();
 				const result = await connector.executeCodeViaUI(
 					code,
 					Math.min(timeout, 300000),
+					fileKey,
 				);
 
 				return {

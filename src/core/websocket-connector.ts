@@ -78,15 +78,29 @@ export class WebSocketConnector implements IFigmaConnector {
     return this.wsServer.sendCommand('EXECUTE_CODE', { code, timeout: 30000 }, 32000, fileKey);
   }
 
-  async executeCodeViaUI(code: string, timeoutMs = 5000): Promise<any> {
+  async executeCodeViaUI(code: string, timeoutMs = 5000, fileKey?: string): Promise<any> {
     // HR TECH flight recorder
     const fs = await import('node:fs');
     const preview = code.replace(/\s+/g, ' ').slice(0, 350);
     const t0 = Date.now();
-    try { fs.appendFileSync('/tmp/hrtech-exec.log', new Date().toISOString() + ' START ' + preview + '\n'); } catch {}
-    const done = (tag: string) => { try { fs.appendFileSync('/tmp/hrtech-exec.log', new Date().toISOString() + ' ' + tag + ' ' + (Date.now() - t0) + 'ms ' + preview.slice(0, 80) + '\n'); } catch {} };
     try {
-      const r = await this.wsServer.sendCommand('EXECUTE_CODE', { code, timeout: timeoutMs }, timeoutMs + 2000);
+      fs.appendFileSync('/tmp/hrtech-exec.log', `${new Date().toISOString()} START ${preview}\n`);
+    } catch {}
+    const done = (tag: string) => {
+      try {
+        fs.appendFileSync(
+          '/tmp/hrtech-exec.log',
+          `${new Date().toISOString()} ${tag} ${Date.now() - t0}ms ${preview.slice(0, 80)}\n`,
+        );
+      } catch {}
+    };
+    try {
+      const r = await this.wsServer.sendCommand(
+        'EXECUTE_CODE',
+        { code, timeout: timeoutMs },
+        timeoutMs + 2000,
+        fileKey,
+      );
       done('DONE');
       return r;
     } catch (e) {

@@ -25,10 +25,15 @@ if ! command -v node >/dev/null 2>&1; then
   brew install node
 fi
 
-# 3. Claude Code
-if ! command -v claude >/dev/null 2>&1; then
-  echo "· Ставлю Claude Code…"
-  npm install -g @anthropic-ai/claude-code
+# 3. Помощник. Если он уже есть (Codex CLI или Claude Code) — ничего не ставим:
+#    доустанавливать второго агента тому, кто работает в Claude Code, нельзя.
+#    Если помощника нет вообще — ставим Codex CLI как вариант по умолчанию.
+if ! command -v codex >/dev/null 2>&1 && \
+   ! command -v claude >/dev/null 2>&1 && \
+   [ ! -x /Applications/ChatGPT.app/Contents/Resources/codex ]; then
+  echo "· Помощник не найден — ставлю Codex CLI…"
+  curl -fsSL https://chatgpt.com/codex/install.sh | sh
+  export PATH="$HOME/.local/bin:$HOME/bin:$PATH"
 fi
 
 # 4. Проект (скачать или обновить) в ~/hr-tech-design
@@ -41,7 +46,7 @@ else
   git clone https://github.com/artsaverin-star/hr-tech-design.git "$DIR"
 fi
 
-# 5. Подключение моста (без сборки — сервер уже готов в репо)
+# 5. Подключение умений и Figma-моста к найденному помощнику
 ( cd "$DIR" && ./setup.sh )
 
 # 6. Открыть папку с плагином в Finder
@@ -51,14 +56,15 @@ cat <<EOF
 
 ════════ Почти готово! Осталось 2 шага вручную ════════
 
-1) Войди в Claude (один раз):
-   открой Терминал, набери   claude   и войди в свой аккаунт.
+1) Войди в своего помощника (один раз):
+   Codex — открой Codex и войди через аккаунт ChatGPT;
+   Claude Code — запусти claude и войди как обычно.
 
 2) Поставь плагин в Figma (один раз):
    десктопная Figma → Plugins → Development → Import plugin from manifest…
    → выбери файл (папку я открыл в Finder):
    $DIR/figma-desktop-bridge/manifest.json
 
-Дальше каждый день: просто открой плагин (подключится сам) →
-в Терминале  cd ~/hr-tech-design && claude  → пиши задачи словами.
+Дальше каждый день: открой макет и Булочку в Figma, а задачу опиши своему помощнику.
+Он сам подключит нужное умение; Булочка хранит настройки и показывает, что умеет.
 EOF

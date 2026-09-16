@@ -1,18 +1,29 @@
 #!/bin/bash
-# HR TECH DESIGN — подключение моста к Claude Code. Запускать один раз: ./setup.sh
+# Булочка — подключение HR Tech skills и Figma-моста к вашему помощнику
+# (Codex CLI и/или Claude Code — что установлено, к тому и подключаем).
+# Запускать один раз: ./setup.sh
 set -e
 DIR="$(cd "$(dirname "$0")" && pwd)"
 
-echo "── HR TECH DESIGN · установка ──────────────────────────"
+echo "── Булочка · настройка ─────────────────────────────────"
 
 # 1. Проверки
 if ! command -v node >/dev/null; then
   echo "✗ Нет Node.js. Поставь с https://nodejs.org (LTS) и запусти setup.sh снова."
   exit 1
 fi
-if ! command -v claude >/dev/null; then
-  echo "✗ Нет Claude Code. Установи:  npm install -g @anthropic-ai/claude-code"
-  echo "  Потом запусти  claude  и войди в СВОЙ аккаунт. Затем setup.sh снова."
+NODE_BIN="$(command -v node)"
+# Помощник может быть любым из поддерживаемых — ищем оба и подключаемся ко всем найденным.
+CODEX_BIN="$(command -v codex 2>/dev/null || true)"
+if [ -z "$CODEX_BIN" ] && [ -x /Applications/ChatGPT.app/Contents/Resources/codex ]; then
+  CODEX_BIN=/Applications/ChatGPT.app/Contents/Resources/codex
+fi
+CLAUDE_BIN="$(command -v claude 2>/dev/null || true)"
+if [ -z "$CODEX_BIN" ] && [ -z "$CLAUDE_BIN" ]; then
+  echo "✗ Не нашёл ни одного помощника. Поставь тот, которым пользуешься:"
+  echo "  Codex CLI:    curl -fsSL https://chatgpt.com/codex/install.sh | sh"
+  echo "  Claude Code:  npm install -g @anthropic-ai/claude-code"
+  echo "  Затем запусти его, войди в СВОЙ аккаунт и повтори setup.sh."
   exit 1
 fi
 
@@ -27,8 +38,7 @@ fi
 
 # 3. Личный Figma-токен (опционально) — комментарии, скрины через API, поиск по библиотеке.
 #    Токен ОБЯЗАН быть личным: каждый дизайнер работает в своих файлах, чужой аккаунт их не увидит.
-#    Поле ввода в виджете убрано (2.1) — в окне 150 px в него было не попасть; спрашиваем здесь,
-#    один раз, и сразу открываем страницу создания, чтобы не искать «где это взять».
+#    Спрашиваем здесь один раз и сразу открываем страницу создания, чтобы не искать «где это взять».
 TOKEN_FILE="$HOME/.hrtech/figma-token"
 TOKEN_URL="https://www.figma.com/developers/api#access-tokens"
 
@@ -63,63 +73,36 @@ if [ ! -s "$TOKEN_FILE" ] && [ -t 0 ]; then
   echo ""
 fi
 
-# 4. Подключение MCP к Claude Code (user scope — работает из любой папки)
-ENV_ARGS=()
+# 4. Подключение Figma-моста к каждому найденному помощнику (user scope).
+#    Логика живёт в scripts/connect-mcp.sh — её же зовёт repair.sh по кнопке «Обновить»,
+#    чтобы поломка «помощник не видит мост» чинилась без терминала.
 if [ -s "$TOKEN_FILE" ]; then
-  ENV_ARGS=(--env "FIGMA_ACCESS_TOKEN=$(tr -d '[:space:]' < "$TOKEN_FILE")")
   echo "· Figma-токен найден — комментарии и REST-инструменты включены"
 fi
-claude mcp remove figma-hrtech -s user >/dev/null 2>&1 || true
-claude mcp add figma-hrtech -s user "${ENV_ARGS[@]}" -- node "$SERVER" >/dev/null
-echo "· Мост figma-hrtech подключён к Claude Code"
+if ! bash "$DIR/scripts/connect-mcp.sh"; then
+  echo "✗ Ни одному помощнику мост подключить не удалось. Запусти codex (или claude), войди в аккаунт и повтори setup.sh."
+  exit 1
+fi
 if [ ! -s "$TOKEN_FILE" ]; then
   echo "  (без токена: комментарии и REST выключены — добавить можно в любой момент,"
   echo "   просто запусти ./setup.sh ещё раз)"
 fi
 
-# 5. Слэш-команды, база знаний и скилы (симлинки на репо — обновляются git pull).
-#    Та же самая процедура вызывается из repair.sh, поэтому новое знание доезжает
-#    до дизайнера по кнопке «Починить», а не только при переустановке.
+# 5. HR Tech skills (обновляются вместе с репозиторием).
 bash "$DIR/scripts/link-knowledge.sh"
 
-# 6. Автозапуск фонового помощника при входе в систему — чтобы задачи выполнялись САМИ,
-#    без терминала. Помощник поднимает мост; плагин к нему цепляется.
-#    (Опрос очереди бесплатный — токены тратятся только на реальные задачи.)
-PLIST="$HOME/Library/LaunchAgents/design.hrtech.bulochka.runner.plist"
-mkdir -p "$HOME/Library/LaunchAgents"
-# Папки node и claude — чтобы фоновый демон их ВИДЕЛ. LaunchAgent стартует с
-# урезанным PATH, а node часто стоит в nvm/fnm/volta/asdf/~/.local/bin (не в
-# /opt/homebrew/bin). Здесь node/claude уже резолвятся (проверки выше прошли) —
-# кладём их реальные папки в начало PATH плиста.
-NODE_DIR="$(cd "$(dirname "$(command -v node)")" 2>/dev/null && pwd)"
-CLAUDE_DIR="$(cd "$(dirname "$(command -v claude)")" 2>/dev/null && pwd)"
-AGENT_PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
-[ -n "$CLAUDE_DIR" ] && [ "$CLAUDE_DIR" != "$NODE_DIR" ] && AGENT_PATH="$CLAUDE_DIR:$AGENT_PATH"
-[ -n "$NODE_DIR" ] && AGENT_PATH="$NODE_DIR:$AGENT_PATH"
-cat > "$PLIST" <<PL
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>Label</key><string>design.hrtech.bulochka.runner</string>
-  <key>ProgramArguments</key><array>
-    <string>/bin/bash</string><string>$DIR/scripts/hrtech-watch.sh</string>
-  </array>
-  <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><true/>
-  <key>ThrottleInterval</key><integer>20</integer>
-  <key>WorkingDirectory</key><string>$DIR</string>
-  <key>StandardOutPath</key><string>/tmp/hrtech-runner.log</string>
-  <key>StandardErrorPath</key><string>/tmp/hrtech-runner.log</string>
-  <key>EnvironmentVariables</key><dict>
-    <key>PATH</key><string>$AGENT_PATH</string>
-  </dict>
-</dict></plist>
-PL
-launchctl unload "$PLIST" >/dev/null 2>&1 || true
-if launchctl load "$PLIST" >/dev/null 2>&1; then
-  echo "· Фоновый помощник добавлен в автозапуск — задачи выполняются без терминала"
-else
-  echo "· Автозапуск не включился — можно запускать вручную:  ./scripts/hrtech-watch.sh"
+# 6. Миграция со старой очереди: Булочка ничего не выполняет и не запускает в фоне.
+#    Раннера в репозитории больше нет, поэтому plist ОБЯЗАН уехать целиком: иначе launchd
+#    при следующей загрузке будет пытаться стартовать удалённый скрипт и спамить в лог.
+LEGACY_PLIST="$HOME/Library/LaunchAgents/design.hrtech.bulochka.runner.plist"
+LEGACY_LABEL="design.hrtech.bulochka.runner"
+if [ -f "$LEGACY_PLIST" ] || pgrep -f hrtech-watch.sh >/dev/null 2>&1; then
+  launchctl bootout "gui/$(id -u)/$LEGACY_LABEL" >/dev/null 2>&1 || true
+  launchctl unload -w "$LEGACY_PLIST" >/dev/null 2>&1 || true
+  rm -f "$LEGACY_PLIST"
+  pkill -f hrtech-watch.sh >/dev/null 2>&1 || true
+  pkill -f hrtech-driver.mjs >/dev/null 2>&1 || true
+  echo "· Старый фоновый диспетчер удалён — работа идёт у вашего помощника"
 fi
 
 echo ""
@@ -127,5 +110,5 @@ echo "✓ Готово. Остался ОДИН ручной шаг в Figma (о
 echo "    Меню → Plugins → Development → Import plugin from manifest…"
 echo "    → $DIR/figma-desktop-bridge/manifest.json"
 echo ""
-echo "Каждый день: просто открой файл в Figma и запусти плагин HR TECH DESIGN."
-echo "Всё остальное — само: помощник уже в фоне, виджет подключается автоматически."
+echo "Каждый день: открой файл и Булочку в Figma, затем поставь задачу своему помощнику."
+echo "Помощник сам подберёт нужное умение; Булочка даст ему контекст файла."

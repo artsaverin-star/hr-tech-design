@@ -1,5 +1,5 @@
 {
-  "name": "HR TECH DESIGN",
+  "name": "Булочка · HR TECH DESIGN",
   "id": "1656667332797186865",
   "api": "1.0.0",
   "main": "code.js",
@@ -15,6 +15,7 @@
   ],
   "enablePrivatePluginApi": true,
   "permissions": [
+    "currentuser",
     "teamlibrary"
   ],
   "documentAccess": "dynamic-page",

@@ -943,7 +943,21 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 								const connectedFiles = this.wsServer.getConnectedFiles();
 								const targetFile = connectedFiles.find(f => f.fileKey === requestedFileKey);
 								if (targetFile) {
-									this.wsServer.setActiveFile(requestedFileKey);
+									const switched = this.wsServer.setActiveFile(requestedFileKey);
+									if (!switched) {
+										return {
+											content: [{
+												type: "text",
+												text: JSON.stringify({
+													status: "file_locked",
+													requestedFileKey,
+													pinnedFileKey: this.wsServer.getPinnedFileKey(),
+													message: "This MCP session is pinned to another file. Use figma_pin_file to move the session lock explicitly, or figma_unpin_file to release it.",
+												}),
+											}],
+											isError: true,
+										};
+									}
 									return {
 										content: [
 											{
@@ -1002,9 +1016,6 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 								],
 							};
 						}
-						throw new Error(
-							"No connection available. Open the Desktop Bridge plugin in Figma.",
-						);
 					}
 
 					// If we got here, the WebSocket plugin bridge wasn't connected.
@@ -1618,7 +1629,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 
 		this.server.tool(
 			"figma_pin_file",
-			"Lock (pin) the bridge to a specific connected Figma file so other open files can no longer steal the active target via selection/page changes. All subsequent tool calls target the pinned file until figma_unpin_file (or the file disconnects). Pass a url, fileKey, or fileName; omit all to pin the current active file. Use this when multiple files have the Desktop Bridge plugin open and commands keep hitting the wrong file.",
+			"Lock (pin) this MCP session to a specific connected Figma file so other open files and plugin-UI lock broadcasts cannot steal the active target. Each Claude/driver process has an independent session and pin. A tool-owned pin survives transient target-file disconnects and fails closed until that exact file reconnects, figma_unpin_file releases it, or this MCP process exits. Pass a url, fileKey, or fileName; omit all to pin the current active file.",
 			{
 				url: z.string().optional().describe("Figma file URL to pin (fileKey is extracted from it)."),
 				fileKey: z.string().optional().describe("Exact fileKey to pin."),
@@ -1645,7 +1656,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 						return { content: [{ type: "text", text: JSON.stringify({ error: "That file is not connected via the Desktop Bridge plugin.", requestedFileKey: targetKey, files: connectedFiles.map(f => ({ fileName: f.fileName, fileKey: f.fileKey })) }) }], isError: true };
 					}
 					const pinned = connectedFiles.find(f => f.fileKey === targetKey);
-					return { content: [{ type: "text", text: JSON.stringify({ status: "pinned", pinnedFileKey: targetKey, fileName: pinned?.fileName, message: `Bridge locked to "${pinned?.fileName || targetKey}". Other open files can no longer steal the active target. Call figma_unpin_file to release.` }) }] };
+					return { content: [{ type: "text", text: JSON.stringify({ status: "pinned", pinnedFileKey: targetKey, fileName: pinned?.fileName, message: `Bridge locked to "${pinned?.fileName || targetKey}" for this MCP session. Other open files can no longer steal the active target. Call figma_unpin_file to release.` }) }] };
 				} catch (error) {
 					return { content: [{ type: "text", text: JSON.stringify({ error: error instanceof Error ? error.message : String(error), message: "Failed to pin file" }) }], isError: true };
 				}
@@ -1654,11 +1665,16 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 
 		this.server.tool(
 			"figma_unpin_file",
-			"Release the file lock set by figma_pin_file. After this, the active file follows user interaction again (selection/page changes).",
-			{},
-			async () => {
+			"Release this MCP session's file lock set by figma_pin_file. Pass fileKey for compare-and-release: a pin that has moved to another file is left untouched.",
+			{
+				fileKey: z.string().optional().describe("Only unpin when this exact fileKey is still pinned."),
+			},
+			async ({ fileKey }) => {
 				try {
 					const wasPinned = this.wsServer?.getPinnedFileKey() || null;
+					if (fileKey && wasPinned !== fileKey) {
+						return { content: [{ type: "text", text: JSON.stringify({ status: "skipped", requestedFileKey: fileKey, pinnedFileKey: wasPinned, message: "Pin changed; the current file lock was preserved." }) }] };
+					}
 					this.wsServer?.unpinFile();
 					return { content: [{ type: "text", text: JSON.stringify({ status: "unpinned", previouslyPinnedFileKey: wasPinned, message: wasPinned ? "File lock released. Active file follows interaction again." : "No file was pinned." }) }] };
 				} catch (error) {
@@ -3635,9 +3651,8 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
  * Main entry point
  */
 async function main() {
-	// Личный Figma-токен: ФАЙЛ ГЛАВНЕЕ env. setup.sh once запёк токен в ~/.claude.json
-	// через `claude mcp add --env`, и он переживает перезапуски; поэтому если читать env
-	// первым, замена токена из виджета откатывалась бы при каждом рестарте моста.
+	// Личный Figma-токен: ФАЙЛ ГЛАВНЕЕ env. setup.sh регистрирует env для Codex MCP,
+	// но замена токена из виджета должна переживать каждый новый запуск моста.
 	// Источник правды — ~/.hrtech/figma-token: его пишет и setup.sh, и виджет (SET_FIGMA_TOKEN).
 	// Токен включает REST-инструменты: комментарии, скрины через API, поиск по библиотеке.
 	try {
