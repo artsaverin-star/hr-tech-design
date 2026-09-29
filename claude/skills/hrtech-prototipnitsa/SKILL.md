@@ -223,7 +223,10 @@ export const SPEC_FIGMA: { fileKey: string; sectionId?: string } | null = {
 здесь твоя обязанность — чтобы `SPEC_FRAMES` существовал и покрывал ВСЕ кадры спеки.
 С v2 режимов борда два — «Сценарий» (`?spec`/`?spec=1`) и «Карта» (`?spec=map`); переключалка,
 шаринг режима через URL и ссылки в Figma по `SPEC_FIGMA` — hrtech-proto-spec §2.
-С v3 карта = граф по раскладке `SPEC_LAYOUT` (`null`/пусто → колонки как в v2), детали — hrtech-proto-spec §2.
+С v6 (29.09.2026) карта рисуется по грамматике борда Figma из состава `src/spec-sections.ts`, а
+состояния, которые открываются только кликами, адресуются рецептами `?seed=<id>` — всё это
+hrtech-proto-spec §2 и его references/view-modes.md; `SPEC_LAYOUT` остаётся в контракте для
+старых бордов.
 
 ## 7. CONTEXT.md и SPEC-VS-PROD.md
 

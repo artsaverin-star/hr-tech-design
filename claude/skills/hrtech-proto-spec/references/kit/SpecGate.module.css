@@ -1,0 +1,58 @@
+/* Вход в спеку (SpecGate.tsx): виды «Карта» и «Сценарий» тянутся на весь экран флексом. */
+.gate {
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+}
+
+/* Панель «Вид» над спекой — как у эталона (токены ДС). */
+.bar {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: var(--hr-space-xs);
+    padding: var(--hr-space-xs) var(--hr-space-m);
+    border-bottom: var(--hr-border-width-s) solid var(--hr-color-border-tertiary);
+    background: var(--hr-color-surface-100);
+}
+
+/* Без `spec` обёртка не должна влиять на раскладку прототипа. */
+.passthrough {
+    display: contents;
+}
+
+/* `viewport=mobile` — прототип в рамке телефона 375×812 по центру. */
+.phoneStage {
+    display: grid;
+    min-height: 100dvh;
+    place-items: center;
+    background: var(--hr-color-surface-0);
+}
+
+.phone {
+    /* Размер вьюпорта телефона в кадрах спеки (SPEC_FRAMES, spec-snapshots.mjs). */
+    width: 375px; /* hrds-check: allow — размер вьюпорта кадра, а не отступ интерфейса */
+    height: 812px; /* hrds-check: allow — размер вьюпорта кадра, а не отступ интерфейса */
+    border: 0;
+    border-radius: var(--hr-border-radius-l);
+    background: var(--hr-color-surface-100);
+}
+
+/* `motion=off` — кадры для снимков и iframe «Сценария» без анимаций: иначе ловится середина. */
+:global(html[data-spec-motion='off']) *,
+:global(html[data-spec-motion='off']) *::before,
+:global(html[data-spec-motion='off']) *::after {
+    animation-duration: 0s !important;
+    animation-delay: 0s !important;
+    transition-duration: 0s !important;
+    transition-delay: 0s !important;
+}
+
+/*
+ * Голая сцена кадра (`viewport=frame`): демо-панель прототипа (`data-spec-chrome`) — не интерфейс
+ * продукта. Прячется без рецепта сразу, с рецептом — когда он доиграл (кликнуть её рецепт успевает).
+ */
+:global(html[data-spec-viewport='frame']:not([data-spec-has-seed])) :global([data-spec-chrome]),
+:global(html[data-spec-viewport='frame'][data-spec-seed='ready']) :global([data-spec-chrome]) {
+    display: none !important;
+}

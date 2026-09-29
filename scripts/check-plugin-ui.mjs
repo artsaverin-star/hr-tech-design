@@ -220,7 +220,7 @@ const serverVersion = serverSource.match(/const HRTECH_VERSION = '([^']+)'/)?.[1
 if (!uiVersion || uiVersion !== pluginVersion || uiVersion !== serverVersion) {
   throw new Error(`Version mismatch: UI=${uiVersion}, plugin=${pluginVersion}, server=${serverVersion}`);
 }
-if (uiVersion !== '4.22') throw new Error(`Expected Bulochka 4.22, got ${uiVersion}`);
+if (uiVersion !== '4.23') throw new Error(`Expected Bulochka 4.23, got ${uiVersion}`);
 
 // Настройки — таблица фактов, а не рассказ. Две регрессии, за которые уже платили:
 // статус помощника жил в трёх местах и противоречил сам себе, а карточки начинались

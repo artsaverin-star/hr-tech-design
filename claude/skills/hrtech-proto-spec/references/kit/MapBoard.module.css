@@ -1,0 +1,922 @@
+/*
+ * «Карта сценариев» — борд на свободном холсте.
+ *
+ * ТЁМНЫЙ БОРД — НА ПАЛИТРЕ ДС, а не на литералах Figma-канона (hrtech-spec §3: #1A1A1A /
+ * #242424 / «да» #00F78E / «нет» #FF4545): здесь surface-0/100/200 и spectre-green/red. Решение
+ * осознанное — борд живёт внутри продукта, а не в Figma; грамматика (формы связей, ромбы,
+ * подписи, отступы) у веб-карты и Figma-борда общая, различается только палитра (записано в
+ * hrtech-proto-spec, references/view-modes.md). Светлый борд — формат
+ * команды Фемиды (страница «4544 · Скринфлоу и спецификация»): серый лист, белые секции с
+ * тонкой рамкой, фиолетовые линии и коды в моноширинном.
+ *
+ * ЦВЕТ ХОЛСТА — НЕ СВОЙ, А ДС, но переключается он ТОЛЬКО наполовину. На `.viewport`
+ * вешается `Theme_palette_static` (styles/Theme/build/static/color.css): он переопределяет
+ * surface-0/100/200 на #141414/#1F1F1F/#292929, text-*, border-*, control-* и special-* и
+ * работает в светлой теме страницы без префикса версии. Спектра в нём НЕТ ни одного
+ * объявления (`grep -c spectre static/color.css` = 0), поэтому `--hr-color-spectre-*` в
+ * тёмном борде остаётся светлотемным — акцент, «да»/«нет» и точки статуса задаются по теме
+ * руками, блоком `.board[data-theme='dark'] .viewport` ниже.
+ *
+ * Роли борда живут в локальных `--bg/--card/…` — они объявлены на `.viewport`, потому что
+ * var() внутри кастомного свойства раскрывается на том элементе, где свойство объявлено:
+ * объяви их выше — и `--bg` посчитается по СВЕТЛОЙ палитре ещё до того, как холст станет
+ * тёмным.
+ */
+
+.board {
+    /* Моноширинные коды борда — формат Фемиды; кегль и интерлиньяж задаёт <Text>. */
+    --mono: ui-monospace, 'SF Mono', Menlo, 'JetBrains Mono', monospace;
+
+    display: grid;
+    flex: 1 1 auto;
+    grid-template-columns: 264px minmax(0, 1fr);
+    min-height: 0;
+    overflow: hidden;
+    background: var(--hr-color-surface-100);
+}
+
+/*
+ * Кегль и интерлиньяж приходят от `<Text>`, класс меняет только семейство.
+ * `[class]` поднимает специфичность над `.Text_typography_*`.
+ */
+/* hrds-check: allow typography-raw — в styles/Theme/build/typography.css нет моноширинного семейства, только YS Text и YS Display */
+.mono[class] {
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------------ */
+/* Список секций слева и шапка — HRDS, как у «Сценария»                */
+/* ------------------------------------------------------------------ */
+
+.sidebar {
+    min-height: 0;
+    padding: var(--hr-space-l) var(--hr-space-s);
+    overflow-y: auto;
+    border-right: var(--hr-border-width-s) solid var(--hr-color-border-secondary);
+    background: var(--hr-color-surface-200);
+    color: var(--hr-color-text-primary);
+}
+
+.sidebarTitle {
+    margin: 0;
+    padding: 0 var(--hr-space-s) var(--hr-space-l);
+}
+
+.sidebarNav {
+    display: flex;
+    flex-direction: column;
+    gap: var(--hr-space-2-xs);
+}
+
+.sidebarNav button {
+    height: auto;
+    min-height: var(--hr-space-3-xl);
+    justify-content: flex-start;
+    white-space: normal;
+}
+
+.navGroup {
+    display: flex;
+    flex-direction: column;
+    gap: var(--hr-space-2-xs-compact);
+}
+
+/* Дорожки открытой секции — вложенный список под её кнопкой. */
+/* hrds-check: allow space-raw — левый отступ = ширина колонки кода в .navItem (28px), иначе дорожки не встают под заголовком */
+.laneNav {
+    display: flex;
+    flex-direction: column;
+    gap: var(--hr-space-2-xs-compact);
+    margin: var(--hr-space-2-xs-compact) 0 var(--hr-space-2-xs);
+    padding: 0 0 0 28px;
+    list-style: none;
+}
+
+/* `.sidebarNav button` выше писано под кнопки секций — вложенные кнопки дорожек возвращаем к своей высоте. */
+.laneNav button {
+    min-height: var(--hr-size-control-s);
+}
+
+/* Названия дорожек бывают длинные («Каталог скиллов: коллеги, пусто, загрузка, ошибка») —
+   две строки и многоточие, иначе третья строка вылезает из кнопки на соседний пункт. */
+.laneNavItem {
+    display: -webkit-box;
+    width: 100%;
+    padding: var(--hr-space-2-xs-compact) 0;
+    overflow: hidden;
+    text-align: left;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+}
+
+/* Свой перенос вместо maxVisibleLines у Button: в Safari кламп ДС на контейнере с гридом
+   резал название до первой буквы («Ч…»), а вторая строка наезжала на следующий пункт. */
+.navItem {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr) auto;
+    gap: var(--hr-space-xs);
+    align-items: baseline;
+    width: 100%;
+    min-width: 0;
+    padding: var(--hr-space-2-xs) 0;
+    text-align: left;
+    white-space: normal;
+}
+
+.navItem[data-kind='archive'] .navTitle {
+    color: var(--hr-color-text-secondary);
+}
+
+.navTitle {
+    display: -webkit-box;
+    min-width: 0;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+}
+
+.main {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+}
+
+.head {
+    flex: none;
+    padding: var(--hr-space-m) var(--hr-space-l);
+    background: var(--hr-color-surface-100);
+    color: var(--hr-color-text-primary);
+}
+
+.headRow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--hr-space-m);
+}
+
+.heading {
+    min-width: 0;
+}
+
+.heading h1,
+.heading p {
+    margin: 0;
+}
+
+.mobileNav {
+    display: none;
+    margin-bottom: var(--hr-space-s);
+}
+
+.zoomBar {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--hr-space-2-xs-compact);
+    margin-left: auto;
+    padding: var(--hr-space-2-xs-compact);
+    border: var(--hr-border-width-s) solid var(--hr-color-border-secondary);
+    border-radius: var(--hr-border-radius-s-compact);
+}
+
+.zoomBtn {
+    min-width: var(--hr-size-control-s);
+}
+
+/* Ширина под «100%» — проценты тикают при зуме и не должны дёргать соседние кнопки. */
+.zoomPct {
+    min-width: var(--hr-size-control-l);
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------------ */
+/* Холст                                                                */
+/* ------------------------------------------------------------------ */
+
+/* hrds-check: allow size-raw — минимальная высота холста борда; шкала --hr-size-control-* кончается на 64 */
+.viewport {
+    --bg: var(--hr-color-surface-0);
+    --section: var(--hr-color-surface-100);
+    --section-border: var(--hr-color-border-tertiary);
+    --intro: var(--hr-color-surface-100);
+    --card: var(--hr-color-surface-200);
+    --card-border: var(--hr-color-border-secondary);
+    --text: var(--hr-color-text-primary);
+    --muted: var(--hr-color-text-secondary);
+    --line: var(--hr-color-text-tertiary);
+
+    /*
+     * Две роли на цвет, а не одна. Ступень -500 — ДЕКОР (полоса секции, штрихи связей,
+     * точки статуса, ореол якоря): там хватает 3:1. Ступень -900 — ТЕКСТ: на белой секции
+     * purple-800 #9056AE даёт 5.08:1 против 3.92:1 у purple-600, red-800 — 5.42:1 против
+     * 4.05:1, green-800 — 4.96:1 против 3.20:1, то есть -500 текстом не проходит AA.
+     */
+    --accent: var(--hr-color-spectre-purple-500);
+    --yes: var(--hr-color-spectre-green-500);
+    --no: var(--hr-color-spectre-red-500);
+    --accent-ink: var(--hr-color-spectre-purple-900);
+    --yes-ink: var(--hr-color-spectre-green-900);
+    --no-ink: var(--hr-color-spectre-red-900);
+    /* Подложка превью — всегда светлая: внутри рамки живёт снимок светлого продукта. */
+    --screen-bg: var(--hr-color-surface-200-light);
+    /* Плашки подписей и ссылок — нейтральная рамка, фон ссылок чуть светлее секции. */
+    --label-border: var(--hr-color-border-primary);
+    --chip-bg: var(--hr-color-surface-0);
+
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 320px;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--text);
+    cursor: grab;
+}
+
+/* Светлый борд — формат Фемиды: линии графа и рамки плашек фиолетовые, как коды и полосы
+   секций; контур снимка плотнее — белый экран на белой секции иначе сливается. */
+.board[data-theme='light'] .viewport {
+    --line: var(--accent);
+    --label-border: var(--accent);
+    --card-border: var(--hr-color-border-primary);
+}
+
+/*
+ * Тёмный борд правит ровно то, что `Theme_palette_static` не накрывает (см. шапку файла).
+ * Спектр приходит от темы страницы, а она у витрины одна — `Theme_color_hrLight` на body
+ * (index.html), так что ступени ниже читаются по hrLight/color.css.
+ * Текстовая ступень -900 рассчитана на СВЕТЛЫЙ фон: #9056AE на #1F1F1F — 3.24:1, поэтому
+ * на тёмном берём -400 (purple #D0A7E5 — 8.7:1, green #93CB9C — 8.8:1, red #EA9C9C — 7.6:1).
+ * Декор остаётся на -500: на #1F1F1F это 4.2–5.1:1, для линий и точек достаточно.
+ * `--muted` — text-tertiary, а не secondary: под статичной палитрой secondary = белый .88
+ * при primary .96, и подпись читалась так же громко, как заголовок; tertiary = белый .6.
+ */
+.board[data-theme='dark'] .viewport {
+    --muted: var(--hr-color-text-tertiary);
+    --accent-ink: var(--hr-color-spectre-purple-400);
+    --yes-ink: var(--hr-color-spectre-green-400);
+    --no-ink: var(--hr-color-spectre-red-400);
+}
+
+.grabbing {
+    cursor: grabbing;
+    user-select: none;
+}
+
+/*
+ * Без `will-change: transform` намеренно: подсказка поднимает ВЕСЬ холст в отдельный слой,
+ * а после увеличения карточек холст широкой секции — 11216×6000 CSS-px (секция 06, дорожка
+ * из десяти узлов). Держать такой слой в памяти ради плавности жеста не нужно: трансформ
+ * и так композитится на время пана/зума, а рисуется только видимая часть.
+ */
+.canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    transform-origin: 0 0;
+}
+
+/* ---------- 00 · Как читать ---------- */
+
+.intro {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    align-items: flex-start;
+    gap: var(--hr-space-s);
+    padding: var(--hr-space-4-xl);
+    border: var(--hr-border-width-s) solid var(--section-border);
+    border-radius: var(--hr-border-radius-2-xl);
+    background: var(--intro);
+}
+
+.introCode {
+    color: var(--accent-ink);
+}
+
+/* hrds-check: allow size-raw — ширина колонки текста внутри INTRO.width 1480 (map-board.ts) */
+.introText {
+    max-width: 1320px;
+}
+
+/* Тихий цвет списка наследуют вложенные `<Text as="li">`: у Text без пропа `color` своего цвета нет. */
+/* hrds-check: allow size-raw — ширина колонки текста внутри INTRO.width 1480 (map-board.ts) */
+.introList {
+    max-width: 1320px;
+    margin: 0;
+    padding-left: var(--hr-space-xl);
+    color: var(--muted);
+}
+
+.introMeta {
+    color: var(--muted);
+}
+
+.introLinks {
+    display: flex;
+    gap: var(--hr-space-3-xl);
+    margin: 0;
+}
+
+/*
+ * Ссылки борда — акцентные: у `Link_view_primary` цвет = text-primary, а на тёмном борде
+ * `Theme_palette_static` делает и special-link белым (= white-1200), так что оба вида
+ * сливаются с обычным текстом. Красим СВОЕЙ переменной компонента (`.Link` берёт цвет из
+ * `--hr-internal-link-color`), пропа цвета у Link нет. `[class]` поднимает специфичность над
+ * `.Link.Link_view_primary` (0,2,0), а ховер-правило пишем отдельно — библиотечное
+ * `.Link.Link_view_primary:hover` (0,3,0) иначе перекрасило бы ссылку обратно.
+ * Подчёркивание постоянное — оно у вида primary, а не по ховеру.
+ */
+.introLinks a[class] {
+    --hr-internal-link-color: var(--accent-ink);
+    --hr-internal-link-icon-color: var(--accent-ink);
+}
+
+/* Ховер — как у `Link_view_secondary` в ДС: уход в основной цвет текста, контраст только растёт. */
+.introLinks a[class]:hover {
+    --hr-internal-link-color: var(--text);
+    --hr-internal-link-icon-color: var(--text);
+}
+
+/* ---------- Секции ---------- */
+
+.section {
+    position: absolute;
+    box-sizing: border-box;
+    border: var(--hr-border-width-s) solid var(--section-border);
+    border-radius: var(--hr-border-radius-2-xl);
+    background: var(--section);
+}
+
+/* Полоса-заголовок секции — как у команды Фемиды. */
+/* hrds-check: allow size-raw — координаты = SECTION.padTop 56 и padX 140 из map-board.ts */
+.sectionBar {
+    position: absolute;
+    top: 56px;
+    right: 140px;
+    left: 140px;
+    height: 6px;
+    border-radius: var(--hr-border-radius-2-xs);
+    background: var(--accent);
+}
+
+/* hrds-check: allow size-raw — шапка стоит под полосой, отступ слева = SECTION.padX 140 (map-board.ts) */
+.sectionHead {
+    position: absolute;
+    top: 92px;
+    left: 140px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--hr-space-xs);
+}
+
+.sectionTitleRow {
+    display: flex;
+    align-items: baseline;
+    gap: var(--hr-space-l);
+}
+
+.sectionCode {
+    color: var(--accent-ink);
+}
+
+.sectionTitle {
+    margin: 0;
+}
+
+.sectionSubtitle {
+    margin: 0;
+    color: var(--muted);
+}
+
+/* Легенда — справа на строке заголовка секции. */
+/* hrds-check: allow size-raw — правый край легенды = SECTION.padX 140 (map-board.ts) */
+.sectionLegend {
+    position: absolute;
+    top: 104px;
+    right: 140px;
+}
+
+.legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--hr-space-xs) var(--hr-space-xl);
+    margin: 0;
+    padding: 0;
+    color: var(--muted);
+    list-style: none;
+}
+
+.legend li {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--hr-space-xs);
+}
+
+/* Образец связи: линия и наконечник-треугольник, 44×12 (5,5 × 1,5 шага сетки). */
+.legendArrow {
+    position: relative;
+    flex: none;
+    width: calc(var(--hr-space-base) * 5.5);
+    height: var(--hr-space-s);
+}
+
+.legendArrow::before {
+    position: absolute;
+    top: 50%;
+    right: var(--hr-space-xs);
+    left: var(--hr-space-2-xs-compact);
+    border-top: var(--hr-border-width-m) solid var(--line);
+    transform: translateY(-50%);
+    content: '';
+}
+
+.legendArrow::after {
+    position: absolute;
+    top: 50%;
+    right: 0;
+    border-top: var(--hr-space-xs-compact) solid transparent;
+    border-bottom: var(--hr-space-xs-compact) solid transparent;
+    border-left: var(--hr-space-xs) solid var(--line);
+    transform: translateY(-50%);
+    content: '';
+}
+
+/* Пунктир — переход, который делает система. */
+.legendDashed::before {
+    border-top-style: dashed;
+}
+
+/* Гребёнка разбора: рельс и три стойки (края и середина). */
+.legendComb {
+    position: relative;
+    flex: none;
+    width: calc(var(--hr-space-base) * 4.75);
+    height: var(--hr-space-s);
+    margin: 0 var(--hr-space-2-xs-compact);
+    border: var(--hr-border-width-m) solid var(--line);
+    border-bottom: 0;
+}
+
+.legendComb::before {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    border-left: var(--hr-border-width-m) solid var(--line);
+    transform: translateX(-50%);
+    content: '';
+}
+
+.legendDiamond {
+    width: var(--hr-space-s);
+    height: var(--hr-space-s);
+    margin: 0 var(--hr-space-2-xs);
+    border: var(--hr-border-width-m) solid var(--line);
+    border-radius: var(--hr-border-radius-2-xs);
+    transform: rotate(45deg);
+}
+
+.legendChip {
+    padding: 0 var(--hr-space-xs);
+    border-radius: var(--hr-border-radius-s-compact);
+    color: var(--accent-ink);
+    background: var(--chip-bg);
+}
+
+/* ---------- Заголовок дорожки ---------- */
+
+/* Над первым экраном дорожки: событие и одна строка «когда так бывает». Ширина — не шире
+   дорожки, иначе длинный заголовок уезжает на ствол соседней ветки. */
+.laneHead {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    gap: var(--hr-space-2-xs);
+    pointer-events: none;
+}
+
+.laneTitle {
+    overflow: hidden;
+    color: var(--text);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.laneNote {
+    overflow: hidden;
+    color: var(--muted);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+/* Черта над отдельной историей со своим входом: это не ветка основного пути. */
+.laneDivider {
+    position: absolute;
+    border-top: var(--hr-border-width-m) dashed var(--section-border);
+    pointer-events: none;
+}
+
+/* ---------- Карточка кадра ---------- */
+
+.card {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    transition: opacity 0.15s ease;
+}
+
+/* Наведение: всё, что не связано с наведённым узлом или переходом, гаснет. */
+.canvas[data-focus] .card:not(.related),
+.canvas[data-focus] .diamondBox:not(.related) {
+    opacity: 0.35;
+}
+
+/* hrds-check: allow space-raw — зазор десктоп/мобилка = GEO.pairGap 20 (map-board.ts), из него считается ширина узла */
+.pair {
+    display: flex;
+    align-items: flex-start;
+    gap: 20px;
+}
+
+/* Рамка — outline снаружи, а не border: с border-box рамка съедала по 2 px, и снимок 720×430
+   пересэмплировался — «1:1» переставало быть правдой. */
+.screen {
+    display: block;
+    flex: none;
+    box-sizing: border-box;
+    padding: 0;
+    overflow: hidden;
+    outline: var(--hr-border-width-s) solid var(--card-border);
+    border: 0;
+    border-radius: var(--hr-border-radius-m-compact);
+    background: var(--screen-bg);
+    cursor: pointer;
+    transition: outline-color 0.15s ease, outline-offset 0.15s ease;
+}
+
+.screenMobile {
+    border-radius: var(--hr-border-radius-l);
+}
+
+.screen:hover,
+.screen:focus-visible,
+.related .screen {
+    outline: var(--hr-border-width-m) solid var(--accent);
+    outline-offset: var(--hr-space-2-xs-compact);
+}
+
+.shot {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: top left;
+}
+
+.shotMissing {
+    display: grid;
+    width: 100%;
+    height: 100%;
+    place-content: center;
+    background: var(--card);
+    color: var(--muted);
+}
+
+/* hrds-check: allow size-raw — высота подписи = GEO.caption 128 (map-board.ts), из неё считается шаг ряда */
+.caption {
+    display: flex;
+    flex-direction: column;
+    gap: var(--hr-space-xs-compact);
+    height: 128px;
+    padding-top: var(--hr-space-m-compact);
+    box-sizing: border-box;
+}
+
+.captionHead {
+    display: flex;
+    align-items: baseline;
+    gap: var(--hr-space-s);
+    min-width: 0;
+}
+
+.code {
+    flex: none;
+    color: var(--accent-ink);
+}
+
+.title {
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.statusPill {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: var(--hr-space-2-xs);
+    margin-left: auto;
+    padding: var(--hr-space-2-xs-compact) var(--hr-space-xs);
+    border-radius: var(--hr-border-radius-round);
+    color: var(--muted);
+    background: var(--chip-bg);
+    align-self: center;
+}
+
+.status {
+    width: var(--hr-space-xs);
+    height: var(--hr-space-xs);
+    border-radius: var(--hr-border-radius-round);
+}
+
+.statusReady {
+    background: var(--yes);
+}
+
+.statusWip {
+    background: var(--hr-color-spectre-yellow-500);
+}
+
+.statusQuestion {
+    background: var(--no);
+}
+
+.figmaLink {
+    flex: none;
+    align-self: center;
+}
+
+.detail {
+    display: -webkit-box;
+    overflow: hidden;
+    margin: 0;
+    color: var(--muted);
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+}
+
+/* ---------- Ссылки-переходы ---------- */
+
+.chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--hr-space-xs-compact) var(--hr-space-xs);
+    min-height: var(--hr-size-control-xs);
+    max-height: calc(var(--hr-size-control-xs) * 1 + var(--hr-space-2-xs));
+    margin-top: auto;
+    overflow: hidden;
+}
+
+/* hrds-check: allow size-raw — предел ширины ссылки внутри колонки карточки (map-board.ts) */
+.chip[class] {
+    max-width: 340px;
+    padding: 0 var(--hr-space-s-compact);
+}
+
+.chip .chipInk {
+    display: inline-flex;
+    gap: var(--hr-space-xs);
+    max-width: 100%;
+    overflow: hidden;
+    color: var(--accent-ink);
+    white-space: nowrap;
+}
+
+.chip[data-tone='yes'] .chipInk {
+    color: var(--yes-ink);
+}
+
+.chip[data-tone='no'] .chipInk {
+    color: var(--no-ink);
+}
+
+.chipIn .chipInk {
+    color: var(--muted);
+}
+
+.chipLabel {
+    overflow: hidden;
+    color: var(--muted);
+    text-overflow: ellipsis;
+}
+
+/* ---------- Ромб ---------- */
+
+.diamondBox {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.15s ease;
+}
+
+/* Квадрат 130 → диагональ 184 (GEO.diamond). */
+/* hrds-check: allow size-raw — сторона квадрата 130 задана GEO.diamond 184 = 130·√2 (map-board.ts) */
+.diamond {
+    width: 130px;
+    height: 130px;
+    border: var(--hr-border-width-m) solid var(--line);
+    border-radius: var(--hr-border-radius-l);
+    background: var(--card);
+    transform: rotate(45deg);
+    transition: border-color 0.15s ease;
+}
+
+.related .diamond {
+    border-color: var(--accent);
+}
+
+/* hrds-check: allow size-raw — 124 < ширины полосы текста в ромбе GEO.diamond 184 */
+.diamondText {
+    position: absolute;
+    display: -webkit-box;
+    width: 124px;
+    overflow: hidden;
+    text-align: center;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    pointer-events: none;
+}
+
+/* Ссылки ромба — НАД ним: снизу из ромба уходит ствол веток, и ссылка легла бы на линию. */
+.diamondChips {
+    position: absolute;
+    bottom: calc(100% + var(--hr-space-s));
+    left: 50%;
+    display: flex;
+    justify-content: center;
+    width: max-content;
+    transform: translateX(-50%);
+}
+
+.diamondChips .chips {
+    justify-content: center;
+    margin-top: 0;
+}
+
+/* ---------- Связи ---------- */
+
+.edges {
+    position: absolute;
+    top: 0;
+    left: 0;
+    overflow: visible;
+    pointer-events: none;
+}
+
+/* Рамки якорей — над снимками. */
+.anchors {
+    z-index: 4;
+}
+
+.edge .edgeLine {
+    stroke: var(--line);
+    stroke-width: 2.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    transition: opacity 0.15s ease, stroke 0.15s ease;
+}
+
+/* Широкая невидимая полоса вдоль линии — чтобы навести было легко. */
+.edge .edgeHit {
+    stroke: transparent;
+    stroke-width: 22;
+    pointer-events: stroke;
+}
+
+.entryDot {
+    fill: var(--line);
+}
+
+.edge[data-state='on'] .edgeLine {
+    stroke: var(--accent);
+    stroke-width: 3.5;
+}
+
+.edge[data-state='dim'] .edgeLine,
+.edge[data-state='dim'] .entryDot {
+    opacity: 0.2;
+}
+
+.markerLine {
+    fill: var(--line);
+}
+
+.markerActive {
+    fill: var(--accent);
+}
+
+/* Подпись перехода — плашкой НА линии, как подпись коннектора в Figma: плашка непрозрачная
+   цвета секции, линия будто проходит под ней. Ширину даёт map-board.ts — место в зазоре. */
+.edgeLabel {
+    position: absolute;
+    z-index: 3;
+    box-sizing: border-box;
+    padding: var(--hr-space-2-xs) var(--hr-space-s);
+    border: var(--hr-border-width-m) solid var(--label-border);
+    border-radius: var(--hr-border-radius-m);
+    color: var(--text);
+    background: var(--section);
+    text-align: center;
+    transform: translate(-50%, -50%);
+    transition: opacity 0.15s ease, border-color 0.15s ease;
+}
+
+.edgeLabelText {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    overflow-wrap: anywhere;
+}
+
+.edgeLabel[data-kind='system'] {
+    border-style: dashed;
+    color: var(--muted);
+}
+
+.edgeLabel[data-tone='yes'] {
+    border-color: var(--yes);
+    color: var(--yes-ink);
+}
+
+.edgeLabel[data-tone='no'] {
+    border-color: var(--no);
+    color: var(--no-ink);
+}
+
+.edgeLabel[data-state='on'] {
+    border-color: var(--accent);
+}
+
+.edgeLabel[data-state='dim'] {
+    opacity: 0.25;
+}
+
+/* Кнопка, по которой нажали, — рамка цвета акцента поверх снимка. */
+.anchorRing {
+    fill: var(--accent);
+    fill-opacity: 0.14;
+    stroke: var(--accent);
+    stroke-width: 3;
+}
+
+/* Подсветка цели после прыжка по ссылке: гаснущая обводка (outline не двигает раскладку). */
+.flash {
+    outline: var(--hr-border-width-l) solid transparent;
+    outline-offset: var(--hr-space-xs);
+    border-radius: var(--hr-border-radius-m);
+    animation: spec-flash 1.4s ease-out;
+}
+
+@keyframes spec-flash {
+    0% {
+        outline-color: var(--accent);
+    }
+
+    100% {
+        outline-color: transparent;
+    }
+}
+
+@media (max-width: 1279px) {
+    .board {
+        grid-template-columns: 232px minmax(0, 1fr);
+    }
+}
+
+@media (max-width: 1023px) {
+    .board {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .sidebar {
+        display: none;
+    }
+
+    .mobileNav {
+        display: block;
+    }
+}
+
+@media (max-width: 639px) {
+    .head {
+        padding: var(--hr-space-s);
+    }
+
+    .headRow {
+        gap: var(--hr-space-s);
+    }
+
+    .zoomBar {
+        margin-left: 0;
+    }
+}
