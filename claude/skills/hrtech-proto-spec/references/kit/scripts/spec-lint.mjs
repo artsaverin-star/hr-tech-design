@@ -376,14 +376,21 @@ FRAMES.forEach(frame => {
 /** Кадры, которые реально стоят на карте (без снятых с карты и телефонов-двойников). */
 const onMapIds = new Set(MAP_SECTIONS.flatMap(section => section.lanes.flatMap(lane => lane.nodes)));
 const desktopFrames = FRAMES.filter(frame => frame.platform === 'desktop' && !RETIRED.has(frame.id));
+/**
+ * Самостоятельные кадры карты: десктопы и телефоны без десктопной пары (экраны нативного
+ * приложения). Общие правила (адрес, рецепт, подписи, переходы, место на карте) — для всех них;
+ * требование «у экрана есть телефон» (L02) — только для десктопа.
+ */
+const ownFrames = FRAMES.filter(frame => !RETIRED.has(frame.id) && (frame.platform === 'desktop' ||
+    !(frame.id.endsWith('@m') && frameById.get(desktopIdOf(frame.id))?.platform === 'desktop')));
 const urlOwner = new Map();
 const noPhoneAtAll = Boolean(NO_MOBILE['*']);
 
-desktopFrames.forEach(frame => {
+ownFrames.forEach(frame => {
     const where = `кадр «${frame.id}»`;
-    const phone = frameById.get(`${frame.id}@m`);
+    const phone = frame.platform === 'desktop' ? frameById.get(`${frame.id}@m`) : null;
 
-    if (!phone && !NO_MOBILE[frame.id] && !noPhoneAtAll) {
+    if (frame.platform === 'desktop' && !phone && !NO_MOBILE[frame.id] && !noPhoneAtAll) {
         defect('L02', where, 'нет телефона', `заверни кадр в \`...withPhone({ … })\` (появится «${frame.id}@m»); у прототипа нет телефонной вёрстки (--probe пишет «страница шире экрана») — MAP_NO_MOBILE['*'] с причиной`);
     }
 
@@ -480,7 +487,7 @@ desktopFrames.forEach(frame => {
 /* Один заголовок у нескольких кадров — карта нечитаема: у каждого шага своё событие. */
 const titleOwners = new Map();
 
-desktopFrames.forEach(frame => {
+ownFrames.forEach(frame => {
     const key = norm(frame.title);
 
     if (key) {
@@ -495,7 +502,7 @@ titleOwners.forEach((ids, key) => {
 });
 
 /* Рецепты подключены? Кадры с seed есть, а запустить рецепт некому — все их снимки покажут старт. */
-if (desktopFrames.some(frame => seedOf(frame.url)) &&
+if (ownFrames.some(frame => seedOf(frame.url)) &&
     !sourceTexts.some(text => /<SpecGate[\s>]/.test(text) || /applySpecSeed\s*\(/.test(text))) {
     defect('L17', 'src/', 'рецепты не подключены: нет ни <SpecGate> в src/index.tsx, ни вызова applySpecSeed в модели',
         'шаг 4 — обёртка <SpecGate title="…"> внутри PrototypeProviders (установщик вписывает её сам); вариант А — шапка spec-seeds.ts');
@@ -654,7 +661,7 @@ if (FULL) {
         }
     });
 
-    desktopFrames.forEach(frame => {
+    ownFrames.forEach(frame => {
         if (!onMapIds.has(frame.id)) {
             defect('L12', `кадр «${frame.id}»`, 'не стоит на карте и не снят', 'поставь в дорожку своей секции или перечисли в MAP_RETIRED с причиной');
         }
@@ -667,7 +674,7 @@ if (FULL) {
      */
     if (seedRecipes) {
         const clicksKey = step => JSON.stringify([step.text ?? '', step.type ?? null, step.scroll ?? null, step.only ?? null]);
-        const recipeFrames = desktopFrames.filter(frame => seedOf(frame.url) && onMapIds.has(frame.id));
+        const recipeFrames = ownFrames.filter(frame => seedOf(frame.url) && onMapIds.has(frame.id));
 
         recipeFrames.forEach(later => {
             const laterRecipe = seedRecipes[seedOf(later.url)];
@@ -795,7 +802,7 @@ if (FULL) {
         };
         const samePath = (a, b) => a.base === b.base && a.actions === b.actions &&
             a.keys.length === b.keys.length && a.keys.every((key, index) => key === b.keys[index]);
-        const desktopOnMap = FRAMES.filter(frame => frame.platform === 'desktop' && !RETIRED.has(frame.id));
+        const desktopOnMap = ownFrames;
         /** Следующий шаг рецептов, которые продолжают путь `path` (тот же старт и те же шаги до него). */
         const continuing = path => desktopOnMap.flatMap(frame => {
             const other = pathOf(frame.url);
@@ -908,7 +915,7 @@ if (FULL) {
             .filter(word => !EVENT_WORDS.test(word) && described.includes(word.slice(0, 5)) &&
                 !ALL_TEXT.includes(word.slice(0, 4))))];
 
-        desktopFrames.filter(frame => onMapIds.has(frame.id)).forEach(frame => {
+        ownFrames.filter(frame => onMapIds.has(frame.id)).forEach(frame => {
             const words = leaked(`${frame.title ?? ''} ${frame.caption ?? ''}`);
 
             if (words.length) {

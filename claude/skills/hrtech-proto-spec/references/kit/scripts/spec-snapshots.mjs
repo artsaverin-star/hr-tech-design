@@ -1242,9 +1242,32 @@ async function renderSheet(cdp, frames, manifest, out, noMobile = {}) {
             shot.overflowX ? 'телефон = обрезанный десктоп' : '',
         ].filter(Boolean);
     };
+    /* Телефон без десктопной пары (экран нативного приложения) — своя карточка; телефон из пары
+       показан рядом со своим десктопом и отдельно не выводится. */
+    const standalonePhone = frame => frame.platform === 'mobile' &&
+        !(frame.id.endsWith('@m') && byId.get(frame.id.replace(/@m$/, ''))?.platform === 'desktop');
+    const phoneCard = frame => {
+        const shot = manifest.frames[frame.id];
+        const image = shot && dataUri(shot.file);
+        const warn = [image ? '' : 'нет снимка', ...problemsOf(frame.id, '')].filter(Boolean).join(' · ');
+        const near = shot?.dup;
+        const nearWarn = near && !near.same && !near.sameView ?
+            `≈ ${codeOf(near.id)}: отличие ${(near.diff * 100).toFixed(2)} %` :
+            '';
+
+        return `<figure>
+            <div class="pair">${image ? `<img class="m" src="${image}">` : '<div class="m miss"></div>'}</div>
+            <figcaption><b>${escape(frame.code)}</b> ${escape(frame.title)}<br><span>${escape(frame.id)} · только телефон</span>` +
+            `${warn ? ` <em>${escape(warn)}</em>` : ''}${nearWarn ? ` <i>${escape(nearWarn)}</i>` : ''}</figcaption>
+        </figure>`;
+    };
     const cards = frames
-        .filter(frame => frame.platform === 'desktop')
+        .filter(frame => frame.platform === 'desktop' || standalonePhone(frame))
         .map(frame => {
+            if (standalonePhone(frame)) {
+                return phoneCard(frame);
+            }
+
             const desktop = manifest.frames[frame.id] && dataUri(manifest.frames[frame.id].file);
             const mobileFrame = byId.get(`${frame.id}@m`);
             const mobileShot = mobileFrame && manifest.frames[mobileFrame.id];
