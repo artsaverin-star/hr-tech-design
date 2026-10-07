@@ -13,7 +13,15 @@
  *
  * Поиск кнопки — тот же, что у разведки `spec-snapshots.mjs --probe --click` (правьте вместе):
  * только в верхнем открытом окне, если оно есть; по всей странице, а не только в первом экране
- * (перед кликом элемент прокручивается в вид); перекрытые и скрытые элементы не годятся.
+ * (перед кликом элемент прокручивается в вид); перекрытые, скрытые и недоступные (`disabled`,
+ * `aria-disabled`) элементы не годятся — недоступную кнопку рецепт ждёт, пока она оживёт.
+ *
+ * ЧИСТЫЙ СТАРТ. С `seed` модуль при загрузке подменяет `localStorage` и `sessionStorage` памятью
+ * страницы: прототип не восстанавливает прошлый выбор человека (иначе снимок и живой экран по
+ * клику на кадр показывали бы разное), а записанное рецептом не переживает перезагрузку и не
+ * «прилипает» к обычному прототипу. Это работает в обоих вариантах запуска. Чтобы подмена
+ * случилась раньше, чем модули продукта что-то прочитают, установщик вписывает в `src/index.tsx`
+ * импорт `import './spec-seed-runtime';` (сортировка импортов ставит его выше продукта).
  *
  * Без параметра `seed` модуль ничего не делает — продукт не меняется.
  */
@@ -65,6 +73,97 @@ const INITIAL_SEED = (() => {
 })();
 
 export const readSeed = (): string | null => INITIAL_SEED;
+
+/**
+ * Хранилище шага спеки — память страницы вместо `localStorage`/`sessionStorage`. Подмена на
+ * `Storage.prototype`, поэтому её видят оба хранилища и любой код продукта, который зовёт
+ * `getItem`/`setItem`/`removeItem`/`clear`/`key`/`length`. Не видит только обращение к ключу как к
+ * полю (`localStorage.token`) — так прототипы не пишут; IndexedDB, cookie и адрес — тоже мимо
+ * (тогда в модели прототипа нужна проверка `hasSeed()`, см. шапку spec-seeds.ts).
+ */
+const isolateStorage = () => {
+    if (typeof Storage === 'undefined') {
+        return;
+    }
+
+    const stores = new WeakMap<Storage, Map<string, string>>();
+    const memory = (storage: Storage): Map<string, string> => {
+        let store = stores.get(storage);
+
+        if (!store) {
+            store = new Map();
+            stores.set(storage, store);
+        }
+
+        return store;
+    };
+
+    Object.defineProperties(Storage.prototype, {
+        clear: {
+            configurable: true,
+            value(this: Storage) {
+                memory(this).clear();
+            },
+        },
+        getItem: {
+            configurable: true,
+            value(this: Storage, key: string) {
+                return memory(this).get(String(key)) ?? null;
+            },
+        },
+        key: {
+            configurable: true,
+            value(this: Storage, index: number) {
+                return [...memory(this).keys()][index] ?? null;
+            },
+        },
+        length: {
+            configurable: true,
+            get(this: Storage) {
+                return memory(this).size;
+            },
+        },
+        removeItem: {
+            configurable: true,
+            value(this: Storage, key: string) {
+                memory(this).delete(String(key));
+            },
+        },
+        setItem: {
+            configurable: true,
+            value(this: Storage, key: string, value: string) {
+                memory(this).set(String(key), String(value));
+            },
+        },
+    });
+};
+
+if (INITIAL_SEED) {
+    isolateStorage();
+}
+
+type FingerprintSource = Pick<SeedRecipe<never, never>, 'clicks' | 'firstVisit'> & { actions?: unknown };
+
+/**
+ * Отпечаток рецепта: по нему spec-lint видит, что рецепт поменялся после съёмки. Считается от
+ * данных рецепта (`clicks`, `firstVisit`, есть ли `actions`) — одинаково в браузере и в Node.
+ * Тело функции `actions` в отпечаток не входит: его текст в сборке и в исходнике разный.
+ */
+export const recipeFingerprint = (recipe: FingerprintSource): string => {
+    const source = JSON.stringify({
+        actions: Boolean(recipe.actions),
+        clicks: recipe.clicks ?? [],
+        firstVisit: Boolean(recipe.firstVisit),
+    });
+    let hash = 0x811c9dc5;
+
+    for (let index = 0; index < source.length; index++) {
+        hash ^= source.charCodeAt(index);
+        hash = Math.imul(hash, 0x01000193);
+    }
+
+    return `${(hash >>> 0).toString(16)}:${source.length}`;
+};
 
 /** Есть ли в адресе шаг спеки — тогда модель стартует с чистого продукта. */
 export const hasSeed = (): boolean => Boolean(readSeed());
@@ -170,6 +269,13 @@ const scoreOf = (element: HTMLElement, want: string): number => [
 
         return Math.max(top, text.includes(want) ? 1 : 0);
     }, 0);
+
+/**
+ * Недоступна ли кнопка или поле сейчас (`disabled`, внутри `fieldset[disabled]`, `aria-disabled`):
+ * клик по ней ничего не делает, поэтому рецепт ждёт, пока она оживёт (например, загрузятся данные).
+ */
+const unavailable = (element: HTMLElement): boolean =>
+    element.matches(':disabled') || Boolean(element.closest('[aria-disabled="true"]'));
 
 /** Перекрыт ли элемент (скрим, другое окно): центр элемента принадлежит чужому узлу. */
 const covered = (element: HTMLElement): boolean => {
@@ -350,20 +456,27 @@ const runSteps = async(id: string, clicks: SeedClick[]) => {
 
         const field = step.type !== undefined;
         let target: HTMLElement | null = null;
+        /* Нашлась, но недоступна: ждём её, а не нажимаем соседнюю похожую. */
+        let blocked: HTMLElement | null = null;
 
-        for (let attempt = 0; attempt < 40 && !target; attempt++) {
-            target = findTarget(step.text, field);
+        for (let attempt = 0; attempt < 40; attempt++) {
+            const found = findTarget(step.text, field);
 
-            if (!target) {
-                await sleep(150);
+            if (found && !unavailable(found)) {
+                target = found;
+                break;
             }
+
+            blocked = found;
+            await sleep(150);
         }
 
         if (!target) {
-            markFailed(
+            markFailed(blocked ?
+                `«${id}»: ${field ? 'поле' : 'кнопка'} «${step.text}» недоступна (disabled) и за 6 с не ожила — ` +
+                'рецепт не нажимает недоступное: проверь, что шаги перед ней дают ей ожить' :
                 `«${id}»: ${field ? 'не нашлось поле' : 'не нашлась кнопка'} «${step.text}»; ` +
-                `на экране есть: ${visibleLabels(field)}`,
-            );
+                `на экране есть: ${visibleLabels(field)}`);
 
             return;
         }
@@ -445,6 +558,12 @@ export const createSeedApplier = <S, A>(
         }
 
         const recipe = recipes[id];
+
+        if (recipe) {
+            /* Генератор снимков сохраняет отпечаток в снимок, spec-lint сверяет его с рецептом. */
+            document.documentElement.dataset.specSeedRecipe = recipeFingerprint(recipe);
+        }
+
         const schedule = (task: () => void) => {
             if (!scheduled) {
                 scheduled = true;

@@ -23,7 +23,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import module from 'node:module';
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
 const [nodeMajor, nodeMinor] = process.versions.node.split('.').map(Number);
 
@@ -99,7 +99,18 @@ const loadHook = (url, context, next) => {
 
 module.registerHooks({ load: loadHook, resolve: resolveHook });
 
-const importSrc = async file => import(pathToFileURL(path.join(SRC, file)).href);
+/*
+ * Пути — строковыми литералами: сборка Прототипницы (prototype-dependencies) проверяет зависимости
+ * прототипа по import() и не пускает вычисляемый путь — PR падает на `build:pr`.
+ */
+const SRC_MODULES = {
+    'map-board.ts': () => import('../map-board.ts'),
+    'spec-seed-runtime.ts': () => import('../spec-seed-runtime.ts'),
+    'spec-sections.ts': () => import('../spec-sections.ts'),
+    'spec-seeds.ts': () => import('../spec-seeds.ts'),
+    'spec.ts': () => import('../spec.ts'),
+};
+const importSrc = async file => SRC_MODULES[file]();
 const readSrc = file => (fs.existsSync(path.join(SRC, file)) ? fs.readFileSync(path.join(SRC, file), 'utf8') : '');
 
 /* ---------------- Отчёт ---------------- */
@@ -466,7 +477,7 @@ desktopFrames.forEach(frame => {
     });
 });
 
-/* Один заголовок у нескольких кадров — карта и «Сценарий» нечитаемы: у каждого шага своё событие. */
+/* Один заголовок у нескольких кадров — карта нечитаема: у каждого шага своё событие. */
 const titleOwners = new Map();
 
 desktopFrames.forEach(frame => {
@@ -588,6 +599,12 @@ if (FULL) {
 
             if (!lane.from && headRecipe?.clicks?.some(step => step.text && CHROME_LABELS.has(norm(step.text)))) {
                 link('entry', lane.nodes[0]);
+            }
+
+            /* Варианты без источника («Варианты: <селект>», `cases`): между случаями стрелок нет, у каждого
+               свой вход — так их и рисует карта. */
+            if (!lane.from && lane.cases) {
+                lane.nodes.forEach(id => link('entry', id));
             }
 
             lane.nodes.forEach((id, nodeIndex) => {
@@ -737,36 +754,135 @@ if (FULL) {
     if (!explored) {
         defect('L22', 'src/spec-explore.json', 'разведка не сохранена', 'шаг 5: node src/scripts/spec-snapshots.mjs --base <адрес> --explore \'?\' (и для каждого нового экрана --explore \'?seed=<id>\')');
     } else {
-        /* Каждая кнопка, которая меняет ВИД, — кадр (клик в рецепте), переход или строка «НЕ ПОКАЗЫВАЕМ». */
-        const used = [
-            ...Object.values(seedRecipes ?? {})
-                .flatMap(recipe => (recipe.clicks ?? []).flatMap(step => [step.text, step.type])),
-            ...FRAMES.flatMap(frame => (frame.next ?? []).map(item => (typeof item === 'string' ? '' : item.label))),
-        ].map(norm).filter(Boolean);
-        const shown = text => used.some(item => item.startsWith(norm(text)) || norm(text).startsWith(item));
+        /*
+         * Каждая кнопка, которая меняет ВИД, — кадр, переход или строка «НЕ ПОКАЗЫВАЕМ», и покрытие
+         * считается ДЛЯ ТОГО ЭКРАНА, где её нажали: «Открыть» на экране A не покрывает «Открыть» на
+         * экране B, если там открывается другое окно. Экран разведки — её стартовый адрес: параметры
+         * без seed плюс шаги рецепта seed на 1440 (без прокруток и шагов только для телефона).
+         * Кнопку экрана покрывает рецепт, который дошёл до этого экрана тем же путём и нажимает её
+         * следующей, или переход (`next`, ветка ромба) из кадра этого экрана. Кадр этого экрана —
+         * с тем же путём ИЛИ с тем же видом на снимке (`view` разведки = `view` снимка): так кадр,
+         * открытый рецептом с `actions`, узнаётся как экран, разведанный голым адресом.
+         */
+        const NOISE = ['viewport', 'motion', 'specprobe'];
+        const startOf = url => {
+            const params = paramsOf(url);
+
+            NOISE.forEach(key => params.delete(key));
+
+            const seed = params.get('seed');
+
+            params.delete('seed');
+
+            return { base: [...params.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => `${key}=${value}`).join('&'), seed };
+        };
+        const stepKey = step => (step.scroll === undefined && step.text && step.only !== 'mobile' ?
+            `${norm(step.text)}${step.type === undefined ? '' : `=${norm(step.type)}`}` : null);
+        const keysOf = recipe => (recipe?.clicks ?? []).map(stepKey).filter(Boolean);
+        const itemKey = item => (item.select ? `${norm(item.select)}=${norm(item.text)}` : norm(item.text));
+        const same = (a, b) => Boolean(a && b) && (a.startsWith(b) || b.startsWith(a));
+        /** Путь до экрана: старт, шаги рецепта и есть ли действия редьюсера; null — рецепта не прочесть. */
+        const pathOf = url => {
+            const { base, seed } = startOf(url);
+
+            if (!seed) {
+                return { actions: false, base, keys: [] };
+            }
+
+            const recipe = seedRecipes?.[seed];
+
+            return recipe ? { actions: Boolean(recipe.actions), base, keys: keysOf(recipe) } : null;
+        };
+        const samePath = (a, b) => a.base === b.base && a.actions === b.actions &&
+            a.keys.length === b.keys.length && a.keys.every((key, index) => key === b.keys[index]);
+        const desktopOnMap = FRAMES.filter(frame => frame.platform === 'desktop' && !RETIRED.has(frame.id));
+        /** Следующий шаг рецептов, которые продолжают путь `path` (тот же старт и те же шаги до него). */
+        const continuing = path => desktopOnMap.flatMap(frame => {
+            const other = pathOf(frame.url);
+
+            return other && other.base === path.base && other.actions === path.actions &&
+                other.keys.length > path.keys.length && path.keys.every((key, index) => key === other.keys[index]) ?
+                [other.keys[path.keys.length]] :
+                [];
+        });
+        /** Что нажимают на экране: продолжения рецептов и переходы кадров этого экрана (по пути или виду). */
+        const pressedOn = (path, view) => {
+            const own = desktopOnMap.filter(frame => {
+                const other = pathOf(frame.url);
+
+                return (path && other && samePath(other, path)) || (view && snapshots[frame.id]?.view === view);
+            });
+
+            return [
+                ...(path ? continuing(path) : []),
+                ...own.flatMap(frame => {
+                    const other = pathOf(frame.url);
+
+                    return [
+                        ...(other ? continuing(other) : []),
+                        ...(frame.next ?? []).map(item => (typeof item === 'string' ? '' : norm(item.label))),
+                        ...DECISIONS.filter(decision => linked.has(`${frame.id}→${decision.id}`))
+                            .flatMap(decision => decision.branches.map(branch => norm(branch.label))),
+                    ];
+                }),
+            ].filter(Boolean);
+        };
+        /* Без рецептов (spec-seeds.ts не импортируется) экран не восстановить — сверяем по всем кликам сразу. */
+        const usedAnywhere = [
+            ...Object.values(seedRecipes ?? {}).flatMap(keysOf),
+            ...FRAMES.flatMap(frame => (frame.next ?? []).map(item => (typeof item === 'string' ? '' : norm(item.label)))),
+        ].filter(Boolean);
         const hiddenOf = text => hiddenItems.find(item => item.text === norm(text) || norm(text).startsWith(item.text));
         /*
-         * Окно или меню на ЭТОЙ ЖЕ странице — это кадр, а не «другой раздел». Спрятать его можно, только
-         * если он повторяет уже показанный кадр («повторяет «<id>»»), уводит вне прототипа или это ⚙.
+         * Окно или меню на ЭТОЙ ЖЕ странице — это кадр. Спрятать его можно, только если он повторяет уже
+         * показанный кадр («повторяет «<id>»») или это ⚙ демо-панели. «Вне прототипа» тут не причина:
+         * уход на другой адрес разведка видит сама (kind navigate) и в L22 не приносит.
          */
-        const validHide = (item, entry) => !/^(открылось|появились кнопки)/.test(item.effect) || item.chrome ||
-            /вне прототипа/.test(entry.reason) ||
+        const validHide = (item, entry) => item.chrome || !/^(открылось|появились кнопки)/.test(item.effect) ||
             [...entry.reason.matchAll(/повторяет\s*«?([\w@-]+)/g)].some(match => frameIds.has(match[1]));
         const name = item => `«${item.select ? `${item.select} = ${item.text}` : item.text}»`;
+        let unbound = 0;
 
-        Object.entries(explored).forEach(([start, { report = [] }]) => report
-            .filter(item => item.kind === 'view' && !shown(item.text))
-            .forEach(item => {
-                const entry = hiddenOf(item.text);
+        Object.entries(explored).forEach(([start, { report = [], skipped = [], view = '' }]) => {
+            const path = pathOf(start);
+            const pressed = path || view ? pressedOn(path, view) : usedAnywhere;
 
-                if (!entry) {
-                    defect('L22', `разведка ${start}`, `${name(item)} меняет вид (${item.effect}), но её нет ни в одном рецепте`,
-                        'сделай кадр (рецепт с этим кликом) или запиши в шапку spec-sections.ts: «НЕ ПОКАЗЫВАЕМ: «кнопка» — причина»');
-                } else if (!validHide(item, entry)) {
-                    defect('L22', `разведка ${start}`, `${name(item)} ${item.effect} на этой же странице — это кадр, «${entry.reason || 'без причины'}» не причина`,
-                        `рецепт { text: '${item.text}' } и кадр в дорожке за экраном, где кнопка; спрятать можно, только если повторяет существующий кадр («повторяет «<id>»») или уводит вне прототипа`);
-                }
-            }));
+            if (!path && !view) {
+                unbound += 1;
+            }
+
+            /* Сорванная разведка ничего не доказывает: пока в отчёте есть ошибки, состав не чистый. */
+            report.filter(item => item.kind === 'error').forEach(item => {
+                defect('L22', `разведка ${start}`, `${name(item)} — ${item.effect}`,
+                    `разведка сорвалась: почини причину (дев-сервер, адрес, кнопка) и повтори --explore '${start}'`);
+            });
+
+            if (skipped.length) {
+                const list = skipped.map(item => (typeof item === 'string' ? `«${item}»` : name(item)));
+
+                warning('L22', `разведка ${start}`, `не нажаты (лимит): ${list.slice(0, 8).join(', ')}${list.length > 8 ? ` и ещё ${list.length - 8}` : ''}`,
+                    `их вид не проверен: повтори --explore '${start}' --explore-limit ${report.length + skipped.length} или запиши в «НЕ ПОКАЗЫВАЕМ»`);
+            }
+
+            report.filter(item => item.kind === 'view' && !pressed.some(key => same(key, itemKey(item))) &&
+                !(item.select && pressed.some(key => same(key, norm(item.text)))))
+                .forEach(item => {
+                    const entry = hiddenOf(item.text);
+
+                    if (!entry) {
+                        defect('L22', `разведка ${start}`, `${name(item)} меняет вид (${item.effect}), но на этом экране её не нажимает ни один рецепт и ни один переход`,
+                            `сделай кадр: рецепт, который доходит до этого экрана (${start}) и нажимает «${item.text}», или next с этой кнопкой у кадра этого экрана; иначе — в шапку spec-sections.ts: «НЕ ПОКАЗЫВАЕМ: «кнопка» — причина»`);
+                    } else if (!validHide(item, entry)) {
+                        defect('L22', `разведка ${start}`, `${name(item)} ${item.effect} на этой же странице — это кадр, «${entry.reason || 'без причины'}» не причина`,
+                            `рецепт { text: '${item.text}' } и кадр в дорожке за экраном, где кнопка; окно на этой же странице спрятать можно, только если оно повторяет существующий кадр («повторяет «<id>»»)`);
+                    }
+                });
+        });
+
+        if (unbound) {
+            warning('L22', 'src/spec-explore.json', `покрытие ${unbound} экран(ов) сверено без привязки к экрану`,
+                'рецепт их seed не прочитан (spec-seeds.ts не импортируется или рецепта нет) — сверил по всем кликам сразу');
+        }
 
         /* Спека без единого перехода, хотя разведка нашла, что показать. */
         const transitions = FRAMES.some(frame => (frame.next ?? []).length) || DECISIONS.length ||
@@ -815,7 +931,8 @@ if (FULL) {
     }
 
     if (seedIds) {
-        const used = new Set(desktopFrames.map(frame => seedOf(frame.url)));
+        /* Все кадры, а не только десктопы: экран нативного приложения стоит на карте одним телефоном. */
+        const used = new Set(FRAMES.filter(frame => !RETIRED.has(frame.id)).map(frame => seedOf(frame.url)));
 
         [...seedIds].filter(id => !used.has(id) && !RETIRED.has(id)).forEach(id => {
             warning('L05', `рецепт «${id}»`, 'ни один кадр на карте его не открывает', `удали рецепт или поставь кадр \`url: '…seed=${id}'\``);
@@ -826,6 +943,20 @@ if (FULL) {
 /* ---------------- Снимки ---------------- */
 
 if (FULL && Object.keys(snapshots).length) {
+    /* Отпечаток рецепта (движок рецептов): снимок снят с тем же рецептом, что сейчас в spec-seeds.ts? */
+    let fingerprintOf = null;
+
+    if (seedRecipes) {
+        try {
+            const runtime = await importSrc('spec-seed-runtime.ts');
+
+            fingerprintOf = typeof runtime.recipeFingerprint === 'function' ? runtime.recipeFingerprint : null;
+        } catch {
+            /* старый движок без отпечатков — сверка ниже пропускается */
+        }
+    }
+
+    const unprinted = [];
     const mapFrames = FRAMES.filter(frame =>
         onMapIds.has(desktopIdOf(frame.id)) && !RETIRED.has(desktopIdOf(frame.id)));
 
@@ -856,6 +987,19 @@ if (FULL && Object.keys(snapshots).length) {
 
         if (entry.seed && !['ready', 'none'].includes(entry.seed)) {
             defect('L16', where, `рецепт не доиграл при съёмке (${entry.seed})`, 'почини рецепт по сообщению генератора и перезапусти съёмку');
+        }
+
+        const recipe = seedRecipes?.[seedOf(frame.url)];
+
+        if (fingerprintOf && recipe && entry.seed === 'ready') {
+            if (!entry.recipe) {
+                unprinted.push(frame.id);
+            } else if (entry.recipe !== fingerprintOf(recipe)) {
+                const id = desktopIdOf(frame.id);
+
+                defect('L16', where, `рецепт «${seedOf(frame.url)}» поменялся после съёмки — на снимке старый путь`,
+                    `node src/scripts/spec-snapshots.mjs --base <адрес> --only ${id},${id}@m`);
+            }
         }
 
         const phone = frame.id.endsWith('@m');
@@ -900,6 +1044,11 @@ if (FULL && Object.keys(snapshots).length) {
             defect('L02', where, 'телефон — обрезанный десктоп (страница шире 375)', 'у прототипа нет телефонной вёрстки: убери withPhone и запиши MAP_NO_MOBILE[\'*\'] с причиной');
         }
     });
+
+    if (unprinted.length) {
+        warning('L16', 'снимки', `${unprinted.length} кадр(ов) сняты без отпечатка рецепта — правку рецепта после съёмки по ним не увидеть`,
+            'перезапусти съёмку (spec-snapshots.mjs --prune) — генератор запишет отпечатки');
+    }
 }
 
 /* ---------------- Движок карты ---------------- */

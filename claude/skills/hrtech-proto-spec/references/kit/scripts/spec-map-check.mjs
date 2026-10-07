@@ -16,6 +16,7 @@
  *   - заголовок дорожки или ссылка под экраном обрезаны многоточием;
  *   - у перехода, нажатого кнопкой, на снимке не нашлась кнопка (рамки при наведении не будет);
  *   - есть страховочная секция «Не вошло в сценарии»;
+ *   - движок карты сообщил об ошибке состава (циклические from, опечатка id, ветка из снятого узла);
  *   - у экрана нет телефона (без причины в `MAP_NO_MOBILE`), нет снимка или снимок мылится
  *     (плотность ниже 2× — на ретине пикселит);
  *   - по `spec-snapshots.json`: рецепт кадра не доиграл или не подключён, два кадра одинаковы,
@@ -26,7 +27,7 @@
  * Запуск (нужен дев-сервер витрины), из папки прототипа:
  *   node src/scripts/spec-map-check.mjs --base https://prototipnitsa.local.yandex-team.ru:<порт>/prototype-builds/<slug>/
  *   node src/scripts/spec-map-check.mjs --base <адрес> --zone 02             # одна секция
- *   node src/scripts/spec-map-check.mjs --base <адрес> --shots /tmp/spec-shots  # + скриншоты секций и «Сценария»
+ *   node src/scripts/spec-map-check.mjs --base <адрес> --shots /tmp/spec-shots  # + скриншоты секций карты
  *
  * Библиотек нет: прямой CDP через глобальный WebSocket Node ≥ 22 (как spec-snapshots.mjs).
  */
@@ -66,9 +67,16 @@ const CHECK = `(sectionIndex) => {
     const inter = (a, b, pad = 0) => a.x < b.x + b.width - pad && b.x < a.x + a.width - pad && a.y < b.y + b.height - pad && b.y < a.y + a.height - pad;
     const shrink = (r, k) => ({ x: r.x + k, y: r.y + k, width: r.width - 2 * k, height: r.height - 2 * k });
     /* Узлы: экран(ы) + подпись у кадра; у ромба — вписанный квадрат (ромб по углам пуст). */
-    const boxes = nodes.map(n => n.kind === 'decision' ?
-        { id: n.id, kind: 'ромб', rect: shrink({ x: n.x, y: n.y, width: n.width, height: n.height }, n.width * 0.2) } :
-        { id: n.id, kind: 'экран', rect: { x: n.x, y: n.y, width: n.width, height: n.height } });
+    /* Телефон без десктопной пары (native): узел шире снимка — экраном считается сам снимок по
+       центру, подписью — полоса во всю ширину узла под ним. */
+    const boxes = nodes.flatMap(n => n.kind === 'decision' ?
+        [{ id: n.id, kind: 'ромб', rect: shrink({ x: n.x, y: n.y, width: n.width, height: n.height }, n.width * 0.2) }] :
+        n.native && n.screen ?
+            [
+                { id: n.id, kind: 'экран', rect: { x: n.screen.x, y: n.y, width: n.screen.width, height: n.screen.y + n.screen.height - n.y } },
+                { id: n.id, kind: 'экран', rect: { x: n.x, y: n.screen.y + n.screen.height, width: n.width, height: n.y + n.height - n.screen.y - n.screen.height } },
+            ] :
+            [{ id: n.id, kind: 'экран', rect: { x: n.x, y: n.y, width: n.width, height: n.height } }]);
     /* Путь SVG → отрезки ломаной (Q-скругления заменяем их углом). */
     const segmentsOf = d => {
         const nums = d.replace(/[MLQ]/g, ' ').trim().split(/\\s+/).map(Number);
@@ -169,9 +177,9 @@ const CHECK = `(sectionIndex) => {
     });
     /* Телефон у каждого экрана и чёткие снимки. */
     nodes.filter(n => n.kind === 'frame').forEach(n => {
-        if (!n.hasMobile && !(layout.noMobile || {})[n.id] && !(layout.noMobile || {})['*']) defects.push('нет телефона: ' + n.code + ' ' + n.id);
+        if (!n.native && !n.hasMobile && !(layout.noMobile || {})[n.id] && !(layout.noMobile || {})['*']) defects.push('нет телефона: ' + n.code + ' ' + n.id);
         const card = document.querySelector('[data-spec-node="' + n.id + '"]');
-        const screens = card ? [...card.querySelectorAll('button')].filter(b => b.getAttribute('aria-label')?.includes('открыть в сценарии')) : [];
+        const screens = card ? [...card.querySelectorAll('button')].filter(b => /открыть в (прототипе|сценарии)/.test(b.getAttribute('aria-label') || '')) : [];
         screens.forEach(b => {
             const img = b.querySelector('img');
             if (!img) { defects.push('нет снимка: ' + n.code + ' ' + n.id); return; }
@@ -404,35 +412,19 @@ async function main() {
         }
     }
 
+    /* Сообщения движка о составе (циклические from, опечатки id, ветка из снятого узла): это дефекты,
+       даже если линии чистые, — кадры такой дорожки на карте не там, где их ждут. */
+    const engineWarnings = (await evaluate('(window.__specBoardLayout && window.__specBoardLayout.warnings) || []')) ?? [];
+
+    if (engineWarnings.length) {
+        console.log(`Движок карты: ДЕФЕКТОВ ${engineWarnings.length}`);
+        engineWarnings.forEach(line => console.log(`   - ${line}`));
+        total += engineWarnings.length;
+    }
+
     if (args.shots) {
-        const branch = await evaluate(
-            'JSON.stringify((window.__specBoardLayout.nodes.find(n => n.kind === "frame" && n.row > 0) || {}).id || "")',
-        );
-
-        /* «Сценарий» сначала проигрывает рецепт шага в iframe — снимаем, когда плашка ожидания ушла. */
-        const settled = async() => {
-            for (let attempt = 0; attempt < 40; attempt += 1) {
-                if (!(await evaluate('(document.body ? document.body.innerText : "").includes("Проигрываем путь")'))) {
-                    break;
-                }
-
-                await sleep(500);
-            }
-
-            await sleep(1200);
-        };
-
-        await open(`${BASE}?spec=1`);
-        await settled();
-        await shot(path.join(String(args.shots), 'scenario.png'));
-
-        if (JSON.parse(branch)) {
-            await open(`${BASE}?spec=1&step=${encodeURIComponent(JSON.parse(branch))}`);
-            await settled();
-            await shot(path.join(String(args.shots), 'scenario-branch.png'));
-        }
-
-        console.log(`\nСкриншоты: ${args.shots}/map-NN.png, scenario.png${JSON.parse(branch) ? ', scenario-branch.png' : ''} — открой и посмотри.`);
+        /* Вида «Сценарий» нет (владелец 6.10.2026) — снимаем только карту. */
+        console.log(`\nСкриншоты: ${args.shots}/map-NN.png — открой и посмотри.`);
     }
 
     finish();

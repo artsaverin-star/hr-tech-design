@@ -1,11 +1,12 @@
 /**
- * КАДРЫ ЖИВОГО ПРОДУКТА (29.09.2026) — текущая редакция: сервис «Марс» и «Сайт» с панелью.
+ * КАДРЫ ЖИВОГО ПРОДУКТА — сервис «MARS», «Сайт» с панелью
+ * и полноэкранный MARS в приложении (02.10.2026).
  *
  * Раньше спека стояла на убранной редакции 2.0 (`?state=<код>&edition=2.0` у всех 197 кадров):
  * карта показывала регулярные задачи, ИИ-профиль и свои скиллы, которых в продукте уже нет.
  * Здесь — только то, что человек реально проходит сейчас. Каждый кадр открывается адресом
  * `?seed=<id>` (рецепт в `spec-seeds.ts` проигрывает путь пользователя от чистого старта),
- * поэтому и снимок на «Карте», и живой экран в «Сценарии» — один и тот же продукт.
+ * поэтому и снимок на «Карте», и живой экран по клику на кадр — один и тот же продукт.
  *
  * ПРАВИЛА. `title` — событие или результат (2–4 слова), `caption` — одна фраза о том, что
  * существенно меняется. Подпись перехода (`label`) — ДОСЛОВНО кнопка из словаря продукта
@@ -19,12 +20,14 @@ import type { SpecDecision, SpecFrame, SpecStatus, SpecTransition } from './spec
 
 export const LIVE_ZONES = {
     access: 'Действия в сервисах',
+    app: 'Приложение: MARS на весь экран',
     failures: 'Отказы и сбои',
     first: 'Первый вход',
-    history: 'История разговоров',
+    history: 'История чатов',
     run: 'Долгая задача',
     settings: 'Настройки',
     site: 'Сайт: помощник рядом с работой',
+    skills: 'Скиллы',
     start: 'Старт: задача за пару кликов',
 } as const;
 
@@ -41,6 +44,8 @@ interface LiveDef {
      * есть рядом мобильная версия»). `false` — только с причиной в `noMobile`.
      */
     mobile?: false;
+    /** Нативный экран приложения: один телефонный кадр, без выдуманной desktop-версии. */
+    platform?: 'mobile';
     noMobile?: string;
     next?: SpecTransition[];
     status?: SpecStatus;
@@ -51,67 +56,107 @@ interface LiveDef {
 const Z = LIVE_ZONES;
 
 const LIVE: Record<string, LiveDef> = {
-    /*
-     * ---------------- 01 · Первый вход ----------------
-     * Одно окно из трёх шагов (владелец, 29.09.2026): знакомство → «Ответы Марса» → доступы одной
-     * кнопкой через Яндекс ID. Открывается само при первом входе в Марс (рецепты с `firstVisit`).
-     */
+    /* 01 · Первый запрос: настройка сообщениями в том же разговоре. */
     'first-intro': {
-        caption: 'При первом входе в Марс окно открывается само: знак, «Марс» и одно описание.',
-        next: [{ label: 'Начать', to: 'first-source' }],
-        title: 'Знакомство',
-        zone: Z.first,
+        caption: 'Первый запрос уже виден в ленте, а MARS предлагает настроить источник ответов и рабочие сервисы прямо в чате.',
+        next: [{ label: 'Настроить MARS', to: 'first-source' }],
+        title: 'Настройка перед первым ответом', zone: Z.first,
     },
     'first-source': {
-        caption: 'Eliza или личная подписка — те же радиокнопки, что в настройках; Eliza больше не спросят перед ответом.',
+        caption: 'Личная подписка рекомендована; Eliza доступна сразу и использует общую корпоративную квоту.',
         next: [
-            { label: 'Продолжить', to: 'first-access' },
-            { label: 'Личная подписка', to: 'first-personal' },
+            { label: 'Продолжить с Eliza', to: 'first-access' },
+            { label: 'Подключить личную подписку', to: 'first-personal' },
+            { label: 'Назад', to: 'first-intro' },
         ],
-        title: 'Ответы Марса',
-        zone: Z.first,
+        title: 'Источник ответов', zone: Z.first,
     },
     'first-personal': {
-        caption: 'Под группой — формы подключения; «Продолжить» ждёт подключённой подписки.',
-        title: 'Выбор подписки при входе',
-        zone: Z.first,
+        caption: 'Провайдер выбирается действием в сообщении MARS; выбор остаётся в истории чата.',
+        next: [
+            { label: 'Выбрать', to: 'first-authorize', anchor: 'text=Выбрать ChatGPT / Codex' },
+            { kind: 'system', to: 'first-saved' },
+            { label: 'Назад', to: 'first-source' },
+        ],
+        title: 'Личная подписка при входе', zone: Z.first,
+    },
+    'first-authorize': {
+        caption: 'Инструкции идут репликой MARS, а под ними — код устройства и кнопка подключения; секреты не попадают в переписку.',
+        next: [
+            { label: 'Подтвердить подключение', to: 'first-personal-connected' },
+            { label: 'Отмена', to: 'first-personal' },
+        ],
+        title: 'Подключение подписки', zone: Z.first,
+    },
+    'first-personal-connected': {
+        caption: 'Личная подписка подключена и выбрана для ответов; дальше — рабочие сервисы.',
+        next: [{ label: 'Продолжить', to: 'first-access' }, { label: 'Назад', to: 'first-personal' }],
+        title: 'Ответы через личную подписку', zone: Z.first,
+    },
+    'first-saved': {
+        caption: 'Сохранённую подписку можно использовать сразу или подключить заново; новая форма открывается только по явному выбору.',
+        next: [
+            { label: 'Использовать подписку', to: 'first-access' },
+            { label: 'Подключить заново', to: 'first-reconnect' },
+            { label: 'Назад', to: 'first-personal' },
+        ],
+        title: 'Подписка уже подключена', zone: Z.first,
+    },
+    'first-reconnect': {
+        caption: 'Повторное подключение открывает компактную форму под инструкцией MARS, сохраняя предыдущие решения в переписке.',
+        next: [
+            { label: 'Подтвердить подключение', to: 'first-personal-connected' },
+            { label: 'Отмена', to: 'first-personal' },
+        ],
+        title: 'Повторное подключение подписки', zone: Z.first,
     },
     'first-access': {
-        caption: 'Все рабочие доступы одной кнопкой; можно начать и без них.',
+        caption: 'MARS предлагает подключить рабочие сервисы, пока исходный запрос ожидает завершения настройки.',
         next: [
-            { label: 'Подключить и открыть чат', to: 'first-yandex-id' },
-            { label: 'Пока без подключений', to: 'mars-home' },
+            { label: 'Подключить сервисы', to: 'first-yandex-id' },
+            { label: 'Подключить позже', to: 'first-skipped' },
+            { label: 'Назад', to: 'first-source' },
         ],
-        title: 'Рабочие сервисы',
-        zone: Z.first,
+        title: 'Рабочие сервисы', zone: Z.first,
     },
     'first-yandex-id': {
-        caption: 'Те же два экрана Яндекс ID, что в настройках, поверх окна; нажатие ведёт дальше.',
-        next: ['first-connecting'],
-        title: 'Вход через Яндекс ID',
-        zone: Z.first,
+        caption: 'Разрешение на рабочие сервисы запрашивается внутри переписки и применяется после явного подтверждения.',
+        next: [{ label: 'Разрешить и подключить', to: 'first-ready' }, { label: 'Назад', to: 'first-access' }],
+        title: 'Разрешение в чате', zone: Z.first,
     },
-    'first-connecting': {
-        caption: 'Все восемь доступов подключаются разом, потом открывается чат.',
-        next: [{ kind: 'system', label: 'подключено', to: 'mars-home' }],
-        title: 'Подключаем сервисы',
-        zone: Z.first,
+    'first-ready': {
+        caption: 'Сервисы подключены, а исходный запрос остаётся в этом чате и продолжится после завершения настройки.',
+        next: [{ label: 'Продолжить', to: 'first-answer' }],
+        title: 'Настройка готова', zone: Z.first,
+    },
+    'first-skipped': {
+        caption: 'Подключение рабочих сервисов отложено, и MARS предлагает продолжить исходный запрос с доступным контекстом.',
+        next: [{ label: 'Продолжить', to: 'first-answer-skipped' }],
+        title: 'Сервисы подключим позже', zone: Z.first,
+    },
+    'first-answer': {
+        caption: 'MARS продолжает первый запрос после настройки без повторной отправки, сохраняя ответы настройки в истории.',
+        title: 'Ответ на первый запрос', zone: Z.first,
+    },
+    'first-answer-skipped': {
+        caption: 'Первый запрос продолжен без подключения сервисов, а настройка и исходный запрос сохранены в одном чате.',
+        title: 'Запрос после пропуска подключений', zone: Z.first,
     },
 
     /* ---------------- 02 · Старт ---------------- */
     'mars-home': {
-        caption: 'Знак, вопрос и три задачи карточками; остальное — в «Все задачи».',
+        caption: 'Вопрос, три задачи и поле запроса; каталог открывается через «Все задачи».',
         next: [
             { label: 'Собрать мой день', to: 'mars-draft' },
             { label: 'Все задачи', to: 'mars-catalog' },
         ],
-        title: 'Старт Марса',
+        title: 'Старт MARS',
         zone: Z.start,
     },
     'mars-catalog': {
-        caption: 'Шторка «Что поручить Марсу»: поиск, рубрики, и выбор кладёт запрос в поле.',
+        caption: 'Шторка «Что поручить MARS»: поиск, рубрики, и выбор кладёт запрос в поле.',
         next: [{ label: 'Собрать мой день', to: 'mars-draft' }],
-        title: 'Что поручить Марсу',
+        title: 'Что поручить MARS',
         zone: Z.start,
     },
     'mars-draft': {
@@ -124,13 +169,13 @@ const LIVE: Record<string, LiveDef> = {
         zone: Z.start,
     },
     'mars-confirm': {
-        caption: 'Источник не выбран в окне первого входа — Марс спрашивает один раз за сессию, запрос ждёт.',
+        caption: 'После настройки запрос ждёт подтверждения источника: Eliza ещё не подтверждена в этой сессии.',
         next: [{ label: 'Изменить запрос', to: 'mars-draft' }],
         title: 'Ответить через Eliza?',
         zone: Z.start,
     },
     'mars-answer': {
-        caption: 'Ответ приходит в ленту; ниже — источники и «Продолжить».',
+        caption: 'Ответ приходит в ленту, исходный запрос и контекст остаются в чате.',
         title: 'Ответ',
         zone: Z.start,
     },
@@ -147,14 +192,14 @@ const LIVE: Record<string, LiveDef> = {
         zone: Z.start,
     },
     'mars-sub-done': {
-        caption: 'Подписка подключена, запрос на месте — отправка уже через личную подписку.',
-        title: 'Отвечает своя подписка',
+        caption: 'Подписка подключена и выбрана; сохранённый запрос ожидает действия «Отправить с личной».',
+        title: 'Личная подписка выбрана',
         zone: Z.start,
     },
 
     /* ---------------- 03 · Долгая задача ---------------- */
     'run-live': {
-        caption: 'Марс идёт по шагам на виду; работу можно остановить.',
+        caption: 'MARS идёт по шагам на виду; работу можно остановить.',
         extra: 'tick=1',
         next: [
             { kind: 'system', label: 'шаги пройдены', to: 'run-result' },
@@ -199,7 +244,7 @@ const LIVE: Record<string, LiveDef> = {
 
     /* ---------------- 04 · Действия в сервисах ---------------- */
     'act-access': {
-        caption: 'Чтобы завести задачи, Марсу нужен доступ к Трекеру от вашего имени.',
+        caption: 'Чтобы завести задачи, MARS нужен доступ к Трекеру от вашего имени.',
         title: 'Нужен доступ',
         zone: Z.access,
     },
@@ -216,7 +261,7 @@ const LIVE: Record<string, LiveDef> = {
         zone: Z.access,
     },
     'act-permission': {
-        caption: 'Доступ выдан; перед изменением Марс спрашивает: что сделает и чего не тронет.',
+        caption: 'Доступ выдан; перед изменением MARS спрашивает: что сделает и чего не тронет.',
         title: 'Разрешение действовать',
         zone: Z.access,
     },
@@ -232,24 +277,24 @@ const LIVE: Record<string, LiveDef> = {
         zone: Z.access,
     },
     'act-applied-rule': {
-        caption: 'Следующие такие задачи Марс делает сам и называет правило, по которому действовал.',
+        caption: 'Следующие такие задачи MARS делает сам и называет правило, по которому действовал.',
         title: 'Дальше — без вопроса',
         zone: Z.access,
     },
     'act-drafts': {
-        caption: 'Без разрешения Марс ничего не меняет и отдаёт черновики задач.',
+        caption: 'Без разрешения MARS ничего не меняет и отдаёт черновики задач.',
         status: 'question',
         title: 'Не разрешили — черновики',
         zone: Z.access,
     },
     'act-no-access': {
-        caption: 'Без доступа Марс собирает черновики, их можно завести вручную.',
+        caption: 'Без доступа MARS собирает черновики, их можно завести вручную.',
         status: 'question',
         title: 'Без доступа — черновики',
         zone: Z.access,
     },
     'act-delete': {
-        caption: 'Необратимое действие — своя карточка и отдельное разрешение.',
+        caption: 'Закрытие задачи требует явного разрешения в карточке MARS.',
         title: 'Необратимое действие',
         zone: Z.access,
     },
@@ -259,14 +304,14 @@ const LIVE: Record<string, LiveDef> = {
         zone: Z.access,
     },
     'act-kept': {
-        caption: 'Задача осталась открытой — Марс так и говорит.',
+        caption: 'Задача осталась открытой — MARS так и говорит.',
         title: 'Задача не тронута',
         zone: Z.access,
     },
 
     /* ---------------- 05 · Отказы и сбои ---------------- */
     'fail-start': {
-        caption: 'Запрос ушёл, Марс готовит ответ — дальше придёт итог или карточка с причиной.',
+        caption: 'Запрос ушёл, MARS готовит ответ — дальше придёт итог или карточка с причиной.',
         extra: 'tick=1',
         title: 'Запрос отправлен',
         zone: Z.failures,
@@ -331,11 +376,12 @@ const LIVE: Record<string, LiveDef> = {
 
     /* ---------------- 06 · Настройки ---------------- */
     'set-page': {
-        caption: 'Три карточки: чем отвечает Марс, личные подписки и доступы к сервисам.',
+        caption: 'Четыре карточки: чем отвечает MARS, личные подписки, доступы к сервисам и скиллы.',
         next: [
             { label: 'Eliza', to: 'set-source' },
             { label: 'Claude', to: 'set-claude' },
             { label: 'Сервисы', to: 'set-services' },
+            { label: 'Подключённые скиллы', to: 'set-skills' },
         ],
         title: 'Настройки',
         zone: Z.settings,
@@ -363,7 +409,7 @@ const LIVE: Record<string, LiveDef> = {
         zone: Z.settings,
     },
     'set-services': {
-        caption: 'Сервисы, которые Марс видит от вашего имени, — тумблерами.',
+        caption: 'Сервисы, которые MARS видит от вашего имени, — тумблерами.',
         next: [{ label: 'Подключить через Яндекс ID', to: 'set-services-on' }],
         title: 'Доступы к сервисам',
         zone: Z.settings,
@@ -373,10 +419,32 @@ const LIVE: Record<string, LiveDef> = {
         title: 'Сервисы подключены',
         zone: Z.settings,
     },
+    /* «Скиллы» в настройках (7.10, «а почему тут этого нет?»). */
+    'set-skills': {
+        caption: 'Тот же каталог скиллов — с раздела «Подключённые»: у скиллов сервисов пометка «Подключил сервис».',
+        next: [{ label: 'Документы', to: 'set-skills-add' }],
+        status: 'question',
+        title: 'Скиллы: Подключённые',
+        zone: Z.settings,
+    },
+    'set-skills-add': {
+        caption: 'Разделы слева по смыслу; скилл подключается прямо из строки.',
+        mobileCaption: 'На телефоне разделы идут одной лентой.',
+        next: [{ label: 'Подключить', to: 'set-skills-on' }],
+        status: 'question',
+        title: 'Скиллы: Документы',
+        zone: Z.settings,
+    },
+    'set-skills-on': {
+        caption: 'Тост о подключении, в строке — «Отключить»; скилл добавился в «Подключённые».',
+        status: 'question',
+        title: 'Свой скилл подключён',
+        zone: Z.settings,
+    },
 
     /* ---------------- 07 · История ---------------- */
     'hist-list': {
-        caption: 'Разговоры по дням в колонке слева; у строки — меню действий.',
+        caption: 'Чаты по дням в колонке слева; у строки — меню действий.',
         next: [{ label: 'Действия с чатом', to: 'hist-menu' }],
         title: 'История',
         zone: Z.history,
@@ -415,51 +483,158 @@ const LIVE: Record<string, LiveDef> = {
         zone: Z.site,
     },
     'site-panel': {
-        caption: 'Панель поверх страницы: подсказки по её содержимому и поле с контекстом.',
+        caption: 'Панель поверх страницы: готовые запросы по её содержимому, поле запроса и переход в MARS.',
         mobileCaption: 'На телефоне панель — шторка на весь экран, с тем же контекстом страницы.',
-        next: [{ label: 'Разобрать пересечения', to: 'site-panel-answer' }],
+        next: [
+            { label: 'Найди пересечения в календаре и предложи, что перенести', to: 'site-panel-answer' },
+            { label: 'Закрыть ИИ-чат', to: 'site-home' },
+        ],
         title: 'Помощник открыт',
         zone: Z.site,
     },
     'site-panel-answer': {
         caption: 'Ответ приходит прямо в панели; страница остаётся на месте.',
-        next: [{ label: 'Открыть этот чат в Я Team & Mars', to: 'site-to-mars' }],
+        next: [{ label: 'Продолжить в MARS', to: 'site-to-mars', anchor: 'Продолжить в MARS — тот же чат и история' }],
         title: 'Встречи пересекаются',
         zone: Z.site,
     },
+    /* 10 · Скиллы (6.10–7.10): «+» → каталог → подключить, команда `/skill`, «i» у подписи. */
+    'skill-add-search': {
+        caption: 'Из «+» у поля открывается каталог скиллов: разделы слева, поиск по названию, описанию или ссылке.',
+        next: [{ label: 'Подключить', to: 'skill-add-done' }],
+        status: 'question',
+        title: 'Поиск скилла', zone: Z.skills,
+    },
+    'skill-add-done': {
+        caption: 'Подключённый скилл получает «Отключить» в строке и тост; его имя добавится и на старте чата.',
+        status: 'question',
+        title: 'Скилл подключён', zone: Z.skills,
+    },
+    'skill-slash': {
+        caption: '«/» в поле подсказывает команды MARS: подключить, список подключённых, отключить.',
+        next: [
+            { label: '/skill install', to: 'skill-slash-skills' },
+            { label: '/skills', to: 'skill-cmd-list' },
+        ],
+        status: 'question',
+        title: 'Команды по «/»', zone: Z.skills,
+    },
+    'skill-slash-skills': {
+        caption: 'После /skill install — скиллы по введённому; выбор подставляет имя скилла в поле.',
+        next: [{ label: 'Презентации', to: 'skill-cmd-installed' }],
+        status: 'question',
+        title: 'Скиллы по названию', zone: Z.skills,
+    },
+    'skill-cmd-installed': {
+        caption: 'Команда и её итог остаются в ленте: что умеет скилл и что он есть во всех чатах MARS.',
+        status: 'question',
+        title: 'Подключён командой', zone: Z.skills,
+    },
+    'skill-cmd-not-found': {
+        caption: 'Неизвестное название — карточка предлагает найти скилл в Skill Store.',
+        next: [{ label: 'Найти скилл', to: 'skill-add-search' }],
+        status: 'question',
+        title: 'Скилл не найден', zone: Z.skills,
+    },
+    'skill-cmd-list': {
+        caption: '/skills — подключённые скиллы: какие поставил сервис, какие подключили вы.',
+        next: [{ label: 'Подключить другой скилл', to: 'skill-add-search' }],
+        status: 'question',
+        title: 'Подключённые скиллы', zone: Z.skills,
+    },
+    'skill-info': {
+        caption: 'У подписи скилла под ответом — «i»: что он умеет и что работает в других чатах MARS.',
+        next: [{ label: 'Подключить в другом чате', to: 'skill-info-connect' }],
+        status: 'question',
+        title: 'О скилле ответа', zone: Z.skills,
+    },
+    'skill-info-connect': {
+        caption: 'В MARS — команда /skill install с копированием; в своём помощнике — инструкция Skill Store.',
+        status: 'question',
+        title: 'Команда для другого чата', zone: Z.skills,
+    },
     'site-to-mars': {
-        caption: 'Тот же разговор открыт в Марсе; в первый раз поверх встанет окно — уже без вопроса про Eliza.',
-        next: [{ kind: 'system', label: 'первый раз в Марсе', to: 'first-intro' }],
-        title: 'Чат в Марсе',
+        caption: 'Тот же чат открыт в MARS: запрос, ответы и контекст сохраняются при переходе из панели.',
+        title: 'Чат в MARS',
         zone: Z.site,
     },
     'site-meeting': {
-        caption: 'Страница встречи с врезкой помощника и скиллами для неё.',
-        next: [{ label: 'Спросить', to: 'site-meeting-panel' }],
+        caption: 'Страница встречи открывает MARS из шапки с контекстом этой встречи.',
+        next: [{ label: 'Открыть ИИ-чаты', to: 'site-meeting-panel' }],
         title: 'Встреча открыта',
         zone: Z.site,
     },
     'site-meeting-panel': {
-        caption: 'Панель с контекстом встречи и скиллами именно для неё.',
+        caption: 'В панели показаны возможности скилла встреч и готовые запросы по открытой встрече.',
+        next: [
+            { label: 'Продолжить в MARS', to: 'site-meeting-to-mars', anchor: 'Продолжить в MARS — тот же чат и история' },
+            { label: 'Закрыть ИИ-чат', to: 'site-meeting' },
+        ],
         title: 'Помощник у встречи',
         zone: Z.site,
     },
+    'site-meeting-to-mars': {
+        caption: 'MARS сохраняет скилл, готовые запросы по встрече и черновик при переходе из панели.',
+        title: 'MARS по этой встрече',
+        zone: Z.site,
+    },
+
+    /* 09 · App: один нативный телефонный экран; те же модель и разговоры. */
+    'app-home': {
+        caption: 'Главная Я Team открывает MARS отдельным экраном приложения.',
+        next: [{ label: 'Я Team & MARS', to: 'app-mars' }],
+        title: 'Главная приложения', zone: Z.app, platform: 'mobile',
+    },
+    'app-mars': {
+        caption: 'MARS занимает весь экран с возвратом в приложение и меню чатов в нативной шапке.',
+        next: [{ label: 'Собрать мой день', to: 'app-draft' }, { label: 'Назад', to: 'app-home' }],
+        title: 'MARS открыт', zone: Z.app, platform: 'mobile',
+    },
+    'app-draft': {
+        caption: 'Выбранный запрос появился в поле; сотрудник может изменить его перед отправкой.',
+        next: [{ label: 'Отправить', to: 'app-confirm' }],
+        title: 'Запрос перед отправкой', zone: Z.app, platform: 'mobile',
+    },
+    'app-confirm': {
+        caption: 'Перед первым ответом через корпоративную квоту MARS просит подтвердить Eliza; запрос сохранён.',
+        next: [{ label: 'Продолжить с Eliza', to: 'app-answer' }],
+        title: 'Подтверждение источника ответа', zone: Z.app, platform: 'mobile',
+    },
+    'app-answer': {
+        caption: 'Ответ показан в полноэкранном чате, а кнопка возврата открывает на главную, сохраняя чат.',
+        next: [{ label: 'Назад', to: 'app-home' }],
+        title: 'Ответ в приложении', zone: Z.app, platform: 'mobile',
+    },
+    'app-meeting': {
+        caption: 'Встреча открыта внутри приложения; вход MARS в шапке передаёт контекст этой встречи.',
+        next: [{ label: 'Открыть ИИ-чаты', to: 'app-meeting-chat' }],
+        title: 'Встреча в приложении', zone: Z.app, platform: 'mobile',
+    },
+    'app-meeting-chat': {
+        caption: 'Контекст встречи сохранён в полноэкранном MARS, а кнопка возврата открывает к той же встрече.',
+        next: [{ label: 'Назад', to: 'app-meeting' }],
+        title: 'MARS по встрече', zone: Z.app, platform: 'mobile',
+    },
+
 };
 
-const urlOf = (id: string, def: LiveDef) => `?seed=${id}${def.extra ? `&${def.extra}` : ''}`;
+const urlOf = (id: string, def: LiveDef) =>
+    `?seed=${id}${def.platform === 'mobile' ? '&surface=app&viewport=frame' : ''}${def.extra ? `&${def.extra}` : ''}`;
 
 export const LIVE_FRAMES: SpecFrame[] = Object.entries(LIVE).flatMap(([id, def]) => {
     const desktop: SpecFrame = {
         caption: def.caption,
         id,
         next: def.next,
-        platform: 'desktop',
+        platform: def.platform ?? 'desktop',
         /* Статус — только если он что-то различает: «В работе» на каждом кадре было шумом (ревью 29.09). */
         status: def.status,
         title: def.title,
         url: urlOf(id, def),
         zone: def.zone,
     };
+
+    if (def.platform === 'mobile') { return [desktop] }
 
     return def.mobile !== false ?
         [desktop, {
@@ -471,6 +646,16 @@ export const LIVE_FRAMES: SpecFrame[] = Object.entries(LIVE).flatMap(([id, def])
         }] :
         [desktop];
 });
+
+/** Снятое раскрытие остаётся адресуемым: скилл теперь сразу виден в карточке. */
+export const LIVE_ALIAS_FRAMES: SpecFrame[] = (['desktop', 'mobile'] as const).map(platform => ({
+    caption: 'Возможности скилла встреч сразу видны в карточке рядом с готовыми запросами.',
+    id: `site-meeting-skills${platform === 'mobile' ? '@m' : ''}`,
+    platform,
+    title: 'О скилле встреч',
+    url: '?seed=site-meeting-skills',
+    zone: Z.site,
+}));
 
 /**
  * Развилки живого продукта. Ветки — значения ответа, подпись — дословно кнопка, если исход

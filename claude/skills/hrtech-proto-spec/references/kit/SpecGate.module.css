@@ -1,4 +1,4 @@
-/* Вход в спеку (SpecGate.tsx): виды «Карта» и «Сценарий» тянутся на весь экран флексом. */
+/* Вход в спеку (SpecGate.tsx): вид «Карта» тянется на весь экран флексом. */
 .gate {
     display: flex;
     flex-direction: column;
@@ -38,7 +38,7 @@
     background: var(--hr-color-surface-100);
 }
 
-/* `motion=off` — кадры для снимков и iframe «Сценария» без анимаций: иначе ловится середина. */
+/* `motion=off` — кадры для снимков без анимаций: иначе ловится середина. */
 :global(html[data-spec-motion='off']) *,
 :global(html[data-spec-motion='off']) *::before,
 :global(html[data-spec-motion='off']) *::after {

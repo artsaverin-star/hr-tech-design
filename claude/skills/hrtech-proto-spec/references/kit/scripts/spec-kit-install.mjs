@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /* eslint-disable no-console -- консольная утилита, вывод и есть её результат */
 /**
- * Установка комплекта «Карта + Сценарий» (hrtech-proto-spec v6) в прототип одной командой.
+ * Установка комплекта «Карта» (hrtech-proto-spec v6) в прототип одной командой. Вида «Сценарий» нет.
  *
  *   node <скил>/references/kit/scripts/spec-kit-install.mjs --to <папка прототипа>
  *   node <скил>/references/kit/scripts/spec-kit-install.mjs --to <папка прототипа> --force   # обновить движок
@@ -43,8 +43,6 @@ const ENGINE = [
     'map-board.ts',
     'MapBoard.tsx',
     'MapBoard.module.css',
-    'ScenarioView.tsx',
-    'ScenarioView.module.css',
     'SpecView.tsx',
     'SpecGate.tsx',
     'SpecGate.module.css',
@@ -94,7 +92,7 @@ let wired = 'нет src/index.tsx — впиши <SpecGate> в корень пр
 if (fs.existsSync(indexPath)) {
     const index = fs.readFileSync(indexPath, 'utf8');
     const ownPanel = fs.readdirSync(src).some(file =>
-        /\.tsx$/.test(file) && !['SpecGate.tsx', 'SpecView.tsx', 'MapBoard.tsx', 'ScenarioView.tsx'].includes(file) &&
+        /\.tsx$/.test(file) && !['SpecGate.tsx', 'SpecView.tsx', 'MapBoard.tsx'].includes(file) &&
         /<SpecView[\s>]/.test(fs.readFileSync(path.join(src, file), 'utf8')));
 
     if (/<SpecGate[\s>]/.test(index)) {
@@ -126,6 +124,35 @@ if (fs.existsSync(indexPath)) {
             wired = 'корень src/index.tsx нестандартный — впиши <SpecGate> руками (см. ниже)';
             warnings.push('SpecGate не вписан автоматически: оберни корень прототипа ВНУТРИ PrototypeProviders.');
         }
+    }
+}
+
+/* ---------- Чистый старт рецептов: движок рецептов загружается раньше продукта ---------- */
+
+/*
+ * С `?seed=` движок рецептов подменяет хранилище прототипа памятью страницы (spec-seed-runtime.ts):
+ * прототип не восстанавливает прошлый выбор человека и не запоминает шаг спеки. Подмена должна
+ * случиться раньше, чем модули продукта что-то прочитают, — поэтому импорт ради побочного эффекта.
+ * Сортировка импортов витрины (`simple-import-sort`: react → побочные эффекты → пакеты → свои)
+ * ставит его сразу после react, то есть выше всех модулей продукта.
+ */
+let cleanStart = 'нет src/index.tsx — впиши первой строкой импортов: import \'./spec-seed-runtime\';';
+
+if (fs.existsSync(indexPath)) {
+    const index = fs.readFileSync(indexPath, 'utf8');
+    const line = "import './spec-seed-runtime';";
+
+    if (index.includes(line)) {
+        cleanStart = 'уже подключён';
+    } else {
+        const reactImports = [...index.matchAll(/^import [^;]*from 'react[^']*';$/gm)];
+        const afterReact = reactImports.length ? reactImports[reactImports.length - 1] : null;
+        const next = afterReact ?
+            index.replace(afterReact[0], `${afterReact[0]}\n\n${line}`) :
+            `${line}\n\n${index}`;
+
+        fs.writeFileSync(indexPath, next.replace(/\n{3,}/g, '\n\n'));
+        cleanStart = `вписан: ${line} в src/index.tsx`;
     }
 }
 
@@ -216,6 +243,7 @@ const base = `https://prototipnitsa.local.yandex-team.ru:<порт>/prototype-bu
 console.log(`Комплект установлен в ${target}\n`);
 report.forEach(line => console.log(line));
 console.log(`\nВид спеки: ${wired}`);
+console.log(`Чистый старт рецептов: ${cleanStart}`);
 
 if (chromeMarks.length) {
     console.log('\nДемо-панель прототипа помечена data-spec-chrome (на кадрах спрячется):');

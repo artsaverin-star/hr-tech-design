@@ -46,7 +46,7 @@
 }
 
 /* ------------------------------------------------------------------ */
-/* Список секций слева и шапка — HRDS, как у «Сценария»                */
+/* Список секций слева и шапка — HRDS                                    */
 /* ------------------------------------------------------------------ */
 
 .sidebar {
@@ -544,6 +544,11 @@
     gap: 20px;
 }
 
+/* Native-only phone: its caption uses half a desktop column; the screen keeps its native size. */
+.pair:has(> .screenMobile:only-child) {
+    justify-content: center;
+}
+
 /* Рамка — outline снаружи, а не border: с border-box рамка съедала по 2 px, и снимок 720×430
    пересэмплировался — «1:1» переставало быть правдой. */
 .screen {
@@ -596,6 +601,15 @@
     height: 128px;
     padding-top: var(--hr-space-m-compact);
     box-sizing: border-box;
+}
+
+/* hrds-check: allow size-raw — native screen is 24 px shorter (430 − 406), keeping the same node/row height */
+.card:has(> .pair > .screenMobile:only-child) .caption {
+    height: 152px;
+}
+
+.card:has(> .pair > .screenMobile:only-child) .title {
+    white-space: normal;
 }
 
 .captionHead {

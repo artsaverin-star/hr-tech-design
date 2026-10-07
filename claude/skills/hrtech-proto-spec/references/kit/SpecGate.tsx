@@ -5,7 +5,7 @@ import { Text } from '@yandex-int/hr-components/Text';
 
 import { seedStarted } from './spec-seed-runtime';
 import { applySpecSeed, hasSpecSeed } from './spec-seeds';
-import { type SpecMode, SpecView } from './SpecView';
+import { SpecView } from './SpecView';
 
 import styles from './SpecGate.module.css';
 
@@ -23,13 +23,14 @@ import styles from './SpecGate.module.css';
  *
  * Что делает:
  * - нет `spec` в адресе — рендерится сам прототип, как раньше;
- * - `?spec=map` — «Карта», `?spec` или `?spec=1` — «Сценарий»;
+ * - `?spec=map` (и любой `?spec`) — «Карта»; вида «Сценарий» нет (владелец 6.10.2026: «никогда не делай»);
  * - `?seed=<id>` — запускает рецепт из `spec-seeds.ts` после первой отрисовки (вариант Б — рецепты
- *   из одних `clicks`); если модель прототипа уже запустила рецепт сама (вариант А), не мешает;
- * - `motion=off` — без анимаций и переходов (так снимаются кадры и iframe «Сценария»);
+ *   из одних `clicks`); если модель прототипа уже запустила рецепт сама (вариант А), не мешает.
+ *   Хранилище прототипа на шаге спеки — память страницы (чистый старт, `spec-seed-runtime.ts`);
+ * - `motion=off` — без анимаций и переходов (так снимаются кадры карты);
  * - `viewport=frame` — голая сцена кадра: элементы с `data-spec-chrome` (демо-панель прототипа,
  *   переключатели сценариев) прячутся, когда рецепт доиграл — кликнуть по ним рецепт успевает;
- * - `viewport=mobile` — прототип в рамке телефона 375×812 (так «Сценарий» открывает шаг телефона).
+ * - `viewport=mobile` — прототип в рамке телефона 375×812 (так клик по телефону на карте открывает шаг).
  *
  * У прототипа уже есть своя панель режимов (как у «Я Team & Mars») — обёртка не нужна:
  * рендери `SpecView` там, где панель переключает вид, и повтори здесь то, что нужно из списка выше.
@@ -56,19 +57,13 @@ if (typeof document !== 'undefined') {
 /* «Вид» — как панель режимов эталона: из спеки можно вернуться в прототип и переключить вид. */
 const VIEW_OPTIONS = [
     { children: 'Прототип', value: 'prototype' },
-    { children: 'Сценарий', value: 'scenario' },
     { children: 'Карта', value: 'map' },
 ];
 
-const readMode = (): SpecMode | null => {
-    const current = new URLSearchParams(window.location.search);
+type SpecMode = 'map';
 
-    if (!current.has('spec')) {
-        return null;
-    }
-
-    return current.get('spec') === 'map' ? 'map' : 'scenario';
-};
+/* Любой `spec` — «Карта»: старые ссылки `?spec=1` («Сценарий») тоже открывают карту. */
+const readMode = (): SpecMode | null => (new URLSearchParams(window.location.search).has('spec') ? 'map' : null);
 
 /** Адрес того же экрана голой сценой — для рамки телефона. */
 const frameAddress = (): string => {
@@ -112,7 +107,7 @@ export const SpecGate = ({ children, title }: SpecGateProps) => {
             if (next === 'prototype') {
                 current.delete('spec');
             } else {
-                current.set('spec', next === 'map' ? 'map' : '1');
+                current.set('spec', 'map');
             }
 
             window.history.replaceState(null, '', `${window.location.pathname}?${current}`);
@@ -134,7 +129,7 @@ export const SpecGate = ({ children, title }: SpecGateProps) => {
                         onChange={event => change(event.target.value as SpecMode | 'prototype')}
                     />
                 </div>
-                <SpecView mode={mode} title={title} onModeChange={change} />
+                <SpecView title={title} />
             </div>
         );
     }

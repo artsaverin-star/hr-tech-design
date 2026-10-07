@@ -1,7 +1,7 @@
 /**
  * РЕЦЕПТЫ ШАГОВ СПЕКИ «Я Team & Mars» (`?seed=<id>`). Движок — `spec-seed-runtime.ts`.
  *
- * В текущей редакции (1.0, режимы «Марс» и «Сайт») почти всё живёт в разговоре и открывается
+ * В текущей редакции (режимы «Марс», «Сайт» и «Апп») почти всё живёт в разговоре и открывается
  * только действиями человека, поэтому шаг спеки проигрывает путь пользователя от чистого
  * старта — теми же действиями редьюсера, что шлют кнопки, и кликами по кнопкам. Тексты кнопок
  * в рецептах — дословно из словарей (`texts/*`). Ключ рецепта = id кадра в `spec-live.ts`,
@@ -12,9 +12,13 @@
  * спеки не пишет в localStorage — иначе подписка из рецепта «прилипала» к обычному прототипу).
  */
 
+import { getAssistantWidget } from './assistant-widgets-data';
 import { DEMO_NOW } from './chat-dates';
 import { ACCESS_SERVICE_ID } from './data/access';
+import { getIntranetContext } from './intranet-scenarios';
 import type { assistantReducer, AssistantState } from './model';
+import { type SetupAction, setupMessage } from './onboarding-chat';
+import { parseSkillCommand, resolveSkillCommand } from './skill-catalog';
 import { createSeedApplier, hasSeed, type SeedRecipe } from './spec-seed-runtime';
 import { STARTER_GROUPS } from './texts/prompt-starters';
 
@@ -113,19 +117,56 @@ const settingsDrawer = (targetId: string) => (state: AssistantState, run: Run) =
 /** На 375 история и настройки живут в левой шторке меню (`common.chatMenu`). */
 const OPEN_MENU_ON_PHONE = { only: 'mobile', text: 'Открыть меню чатов', wait: 800 } as const;
 
-/* Кнопки окна первого входа (`texts/onboarding.ts`: `start`, `continue`). */
-const START = { text: 'Начать', wait: 700 } as const;
-const CONTINUE = { text: 'Продолжить', wait: 700 } as const;
-
-/**
- * «Подключаем рабочие сервисы…» живёт 900 мс и сам переходит в чат — кликом его не поймать.
- * Кадр держит тот же показ, что и адресуемая ссылка окна `?state=v3-onboarding-connecting`
- * (`Onboarding.tsx`: код состояния замораживает ожидание на шаге доступов).
- */
-const connectingPreview = (state: AssistantState, run: Run): AssistantState => ({
-    ...run(run(state, { type: 'start-onboarding' }), { step: 2, type: 'set-onboarding-step' }),
-    stateCode: 'v3-onboarding-connecting',
-});
+/** Настройка идёт ответами в том же чате, где уже виден исходный запрос. */
+const answerSetup = (state: AssistantState, run: Run, action: SetupAction): AssistantState => {
+    const messages = state.chats.find(chat => chat.id === state.activeChatId)?.messages ?? [];
+    const message = setupMessage(messages);
+    if (!message) { throw new Error('в чате нет активного шага настройки MARS') }
+    return run(state, { type: 'answer-setup', messageId: message.id, action });
+};
+const firstIntro = (state: AssistantState, run: Run) => run({
+    ...state, hasConsent: false, onboardingSeen: false, onboardingCompleted: false,
+}, { type: 'send', text: promptOf('day-plan') });
+const firstSource = (state: AssistantState, run: Run) =>
+    answerSetup(firstIntro(state, run), run, { type: 'start' });
+const firstPersonal = (state: AssistantState, run: Run) =>
+    answerSetup(firstSource(state, run), run, { type: 'personal' });
+const firstAuthorize = (state: AssistantState, run: Run) =>
+    answerSetup(firstPersonal(state, run), run, { type: 'vendor', vendorId: 'codex' });
+const firstSaved = (state: AssistantState, run: Run) =>
+    firstAuthorize(run(state, { type: 'authorize-codex' }), run);
+const sitePanel = (state: AssistantState, run: Run) =>
+    run(run(state, { screen: 'home', type: 'set-screen' }), { type: 'open-assistant', view: 'home' });
+const siteAnswer = (state: AssistantState, run: Run) => {
+    const widget = getAssistantWidget('calendar');
+    const sent = run(sitePanel(state, run), { type: 'run-widget', context: widget.context, prompt: widget.prompt });
+    return ticks(run(sent, { type: 'confirm-subscription-send' }), run);
+};
+const appHome = (state: AssistantState, run: Run) => run(state, { screen: 'home', type: 'set-screen' });
+/* Скиллы (6.10): панель «Офиса и компании» — у раздела свой скилл «Стафф», подпись ответа с «i». */
+const officePanel = (state: AssistantState, run: Run) =>
+    run(run(state, { screen: 'office', type: 'set-screen' }), { context: getIntranetContext('office'), type: 'open-panel' });
+/** Итог команды `/skill …` — тем же действием редьюсера, что шлёт поле. */
+const skillCommand = (text: string) => (state: AssistantState, run: Run) =>
+    run(officePanel(state, run), { card: resolveSkillCommand(parseSkillCommand(text)!, []).card, text, type: 'skill-command' });
+const officeAnswer = (state: AssistantState, run: Run) =>
+    ticks(run(run(officePanel(state, run), { text: 'Покажи маршрут на дизайн-синк в 14:00, переговорка 3.12', type: 'send' }),
+        { type: 'confirm-subscription-send' }), run);
+const FIELD = 'Спросите или поручите';
+/* С 5.10 MARS в приложении — строка вкладки «Сервисы», а не плашка на «Сегодня». */
+const APP_OPEN = [{ text: 'Сервисы', wait: 600 }, { text: 'Я Team & MARS', wait: 800 }] as const;
+const APP_DRAFT = [...APP_OPEN, { text: 'Собрать мой день', wait: 600 }];
+const APP_CONFIRM = [...APP_DRAFT, { text: 'Отправить', wait: 500 }];
+const APP_ANSWER = [...APP_CONFIRM,
+    { text: 'Продолжить с Eliza', wait: 6000 }];
+const firstAccess = (state: AssistantState, run: Run) =>
+    answerSetup(firstSource(state, run), run, { type: 'eliza' });
+const firstPermission = (state: AssistantState, run: Run) =>
+    answerSetup(firstAccess(state, run), run, { type: 'connect' });
+const firstReady = (state: AssistantState, run: Run) =>
+    answerSetup(firstPermission(state, run), run, { type: 'approve' });
+const firstSkipped = (state: AssistantState, run: Run) =>
+    answerSetup(firstAccess(state, run), run, { type: 'skip' });
 
 /* ------------------------------------------------------------------ */
 /* Рецепты                                                              */
@@ -133,22 +174,71 @@ const connectingPreview = (state: AssistantState, run: Run): AssistantState => (
 
 export const SEED_RECIPES: Record<string, Recipe> = {
     /*
-     * 01 · Первый вход. Окно открывает сам продукт — эффект первого входа на обычном адресе, —
-     * поэтому шаги идут с `firstVisit` (знакомство не считается пройденным) и дальше только кликами.
+     * 01 · Первый запрос. Исходный запрос остаётся в ленте, решения настройки добавляют
+     * ответы сотрудника и MARS. Завершение продолжает этот запрос ровно один раз.
      */
-    'first-intro': { firstVisit: true },
-    'first-source': { clicks: [START], firstVisit: true },
-    'first-personal': { clicks: [START, { blur: true, text: 'Личная подписка', wait: 700 }], firstVisit: true },
-    'first-access': { clicks: [START, CONTINUE], firstVisit: true },
-    'first-yandex-id': {
-        clicks: [START, CONTINUE, { blur: true, text: 'Подключить и открыть чат', wait: 900 }],
+    'first-intro': { actions: firstIntro, firstVisit: true },
+    'first-source': { actions: firstSource, firstVisit: true },
+    'first-personal': {
+        actions: firstPersonal,
+        clicks: [{ scroll: 'bottom', text: 'Выберите личную подписку, которую хотите подключить.' }],
         firstVisit: true,
     },
-    'first-connecting': { actions: connectingPreview, firstVisit: true },
+    'first-authorize': {
+        actions: firstAuthorize,
+        clicks: [{ text: 'Код устройства', scroll: 'bottom', wait: 300 }],
+        firstVisit: true,
+    },
+    'first-personal-connected': {
+        actions: (s, run) => {
+            const connected = run(firstAuthorize(s, run), { type: 'authorize-codex' });
+            return answerSetup(connected, run, { type: 'connected', vendorId: 'codex' });
+        },
+        clicks: [{ text: 'Личная подписка подключена', scroll: 'bottom', wait: 300 }],
+        firstVisit: true,
+    },
+    'first-saved': {
+        actions: firstSaved,
+        clicks: [{ text: 'Эта подписка уже подключена.', scroll: 'bottom', wait: 300 }],
+        firstVisit: true,
+    },
+    'first-reconnect': {
+        actions: (s, run) => answerSetup(firstSaved(s, run), run, { type: 'reconnect' }),
+        clicks: [{ text: 'Код устройства', scroll: 'bottom', wait: 300 }],
+        firstVisit: true,
+    },
+    'first-access': { actions: firstAccess, firstVisit: true },
+    'first-yandex-id': {
+        actions: firstPermission,
+        clicks: [{ text: 'Рабочие сервисы', scroll: 'bottom', wait: 300 }],
+        firstVisit: true,
+    },
+    // Совместимость старой ссылки: теперь это реальное подтверждение в чате, без ожидания.
+    'first-connecting': { actions: firstPermission, firstVisit: true },
+    'first-ready': {
+        actions: firstReady,
+        clicks: [{ text: 'Настройка готова', scroll: 'bottom', wait: 300 }],
+        firstVisit: true,
+    },
+    'first-skipped': {
+        actions: firstSkipped,
+        clicks: [{ text: 'Настройка готова', scroll: 'bottom', wait: 300 }],
+        firstVisit: true,
+    },
+    'first-answer': {
+        actions: (s, run) => ticks(answerSetup(firstReady(s, run), run, { type: 'finish' }), run),
+        firstVisit: true,
+    },
+    'first-answer-skipped': {
+        actions: (s, run) => ticks(answerSetup(firstSkipped(s, run), run, { type: 'finish' }), run),
+        firstVisit: true,
+    },
 
     /* 02 · Старт */
     'mars-home': {},
-    'mars-draft': { actions: (s, run) => run(s, { text: promptOf('day-plan'), type: 'save-chat-draft' }) },
+    'mars-draft': {
+        actions: (s, run) => run(s, { text: promptOf('day-plan'), starterId: 'day-plan', type: 'select-chat-starter' }),
+    },
     'mars-catalog': { clicks: [{ text: 'Все задачи', wait: 900 }] },
     'mars-confirm': { actions: (s, run) => run(s, { text: promptOf('day-plan'), type: 'send' }) },
     'mars-answer': { actions: (s, run) => ask(s, run, 'day-plan') },
@@ -165,7 +255,7 @@ export const SEED_RECIPES: Record<string, Recipe> = {
         clicks: [
             { text: 'На личную подписку', wait: 700 },
             { text: 'Claude', wait: 900 },
-            { text: 'sk-ant-oat01', type: 'sk-ant-oat01-demo-token' },
+            { text: 'Токен Claude', type: 'sk-ant-oat01-demo-token' },
             { blur: true, text: 'Подключить подписку', wait: 1800 },
         ],
     },
@@ -248,7 +338,7 @@ export const SEED_RECIPES: Record<string, Recipe> = {
     'set-claude-bad': {
         actions: settingsDrawer('claude'),
         clicks: [
-            { text: 'sk-ant-oat01', type: 'не токен' },
+            { text: 'Токен Claude', type: 'не токен' },
             { blur: true, text: 'Подключить подписку', wait: 600 },
         ],
     },
@@ -260,12 +350,32 @@ export const SEED_RECIPES: Record<string, Recipe> = {
         }),
     },
     'set-services': { actions: settingsDrawer('work') },
+    /* «Настройки» → «Подключённые скиллы» открывает каталог «Скиллы» (7.10). */
+    'set-skills': { actions: toSettings, clicks: [{ text: 'Подключённые скиллы', wait: 900 }] },
+    'set-skills-add': {
+        actions: toSettings,
+        clicks: [
+            { text: 'Подключённые скиллы', wait: 900 },
+            /* Разделы — оглавлением на десктопе; на 375 каталог — одна лента, её докручиваем. */
+            { only: 'desktop', text: 'Документы', wait: 600 },
+            { only: 'mobile', scroll: 'bottom', text: 'Мои встречи', wait: 500 },
+        ],
+    },
+    'set-skills-on': {
+        actions: toSettings,
+        clicks: [
+            { text: 'Подключённые скиллы', wait: 900 },
+            { only: 'desktop', text: 'Документы', wait: 600 },
+            { only: 'mobile', scroll: 'bottom', text: 'Мои встречи', wait: 500 },
+            { text: 'Подключить «Презентации»', wait: 1200 },
+        ],
+    },
     'set-services-on': {
         actions: settingsDrawer('work'),
         clicks: [
             { text: 'Подключить через Яндекс ID', wait: 700 },
-            { text: 'Экран Яндекс ID', wait: 700 },
-            { blur: true, text: 'Экран Яндекс ID', wait: 900 },
+            { text: 'Продолжить на экране Яндекс ID', wait: 700 },
+            { blur: true, text: 'Продолжить на экране Яндекс ID', wait: 900 },
         ],
     },
 
@@ -300,32 +410,73 @@ export const SEED_RECIPES: Record<string, Recipe> = {
 
     /* 08 · Сайт: помощник рядом с работой */
     'site-home': { actions: (s, run) => run(s, { screen: 'home', type: 'set-screen' }) },
-    'site-panel': {
-        actions: (s, run) => run(s, { screen: 'home', type: 'set-screen' }),
-        clicks: [{ blur: true, text: 'Открыть ИИ-чаты', wait: 900 }],
-    },
-    'site-panel-answer': {
-        actions: (s, run) => run(s, { screen: 'home', type: 'set-screen' }),
-        clicks: [
-            { text: 'Открыть ИИ-чаты', wait: 800 },
-            { text: 'Разобрать пересечения', wait: 800 },
-            { blur: true, text: 'Продолжить с Eliza', wait: 6000 },
-        ],
-    },
+    'site-panel': { actions: sitePanel },
+    'site-panel-answer': { actions: siteAnswer },
     'site-to-mars': {
-        actions: (s, run) => run(s, { screen: 'home', type: 'set-screen' }),
-        clicks: [
-            { text: 'Открыть ИИ-чаты', wait: 800 },
-            { text: 'Разобрать пересечения', wait: 800 },
-            { text: 'Продолжить с Eliza', wait: 6000 },
-            { blur: true, text: 'Открыть этот чат в', wait: 1200 },
-        ],
+        actions: (s, run) => run(siteAnswer(s, run), { type: 'set-screen', screen: 'chat' }),
     },
     'site-meeting': { actions: (s, run) => run(s, { screen: 'meeting', type: 'set-screen' }) },
+
+    /* 10 · Скиллы */
+    'skill-add-search': {
+        actions: officePanel,
+        clicks: [
+            { text: 'Добавить', wait: 700 },
+            { text: 'Подключить скилл', wait: 900 },
+            { text: 'Название или ссылка на скилл', type: 'достиж', wait: 600 },
+        ],
+    },
+    'skill-add-done': {
+        actions: officePanel,
+        clicks: [
+            { text: 'Добавить', wait: 700 },
+            { text: 'Подключить скилл', wait: 900 },
+            { text: 'Название или ссылка на скилл', type: 'достиж', wait: 600 },
+            { text: 'Подключить «Журнал достижений»', wait: 1200 },
+        ],
+    },
+    'skill-slash': { actions: officePanel, clicks: [{ keepFocus: true, text: FIELD, type: '/', wait: 600 }] },
+    'skill-slash-skills': {
+        actions: officePanel,
+        clicks: [{ keepFocus: true, text: FIELD, type: '/skill install презентац', wait: 600 }],
+    },
+    'skill-cmd-installed': { actions: skillCommand('/skill install presentation-maker') },
+    'skill-cmd-not-found': { actions: skillCommand('/skill install кофемашина') },
+    'skill-cmd-list': { actions: skillCommand('/skills') },
+    'skill-info': { actions: officeAnswer, clicks: [{ text: 'О скилле', wait: 800 }] },
+    'skill-info-connect': {
+        actions: officeAnswer,
+        clicks: [{ text: 'О скилле', wait: 800 }, { text: 'Подключить в другом чате', wait: 800 }],
+    },
     'site-meeting-panel': {
         actions: (s, run) => run(s, { screen: 'meeting', type: 'set-screen' }),
-        clicks: [{ blur: true, text: 'Спросить', wait: 900 }],
+        clicks: [{ blur: true, text: 'Открыть ИИ-чаты', wait: 900 }],
     },
+    /* Старый адрес раскрытия: возможности теперь сразу видны в ServiceSkillCard. */
+    'site-meeting-skills': {
+        actions: (s, run) => run(s, { screen: 'meeting', type: 'set-screen' }),
+        clicks: [{ blur: true, text: 'Открыть ИИ-чаты', wait: 900 }],
+    },
+    'site-meeting-to-mars': {
+        actions: (s, run) => run(s, { screen: 'meeting', type: 'set-screen' }),
+        clicks: [
+            { blur: true, text: 'Открыть ИИ-чаты', wait: 900 },
+            { blur: true, text: 'Продолжить в MARS — тот же чат и история', wait: 600 },
+        ],
+    },
+
+    /* 09 · Нативное приложение: локальный «Назад» требует пройти вход через UI. */
+    'app-home': { actions: appHome },
+    'app-mars': { actions: appHome, clicks: [...APP_OPEN] },
+    'app-draft': { actions: appHome, clicks: APP_DRAFT },
+    'app-confirm': { actions: appHome, clicks: APP_CONFIRM },
+    'app-answer': { actions: appHome, clicks: APP_ANSWER },
+    'app-meeting': { actions: (s, run) => run(s, { screen: 'meeting', type: 'set-screen' }) },
+    'app-meeting-chat': {
+        actions: (s, run) => run(s, { screen: 'meeting', type: 'set-screen' }),
+        clicks: [{ text: 'Открыть ИИ-чаты', wait: 900 }],
+    },
+
 };
 
 /** Есть ли в адресе шаг спеки — тогда модель стартует с чистого продукта и не пишет настройки. */
@@ -338,6 +489,8 @@ export const hasSpecSeed = hasSeed;
 export const applySpecSeed = createSeedApplier<AssistantState, Action>(SEED_RECIPES, state => ({
     ...state,
     onboardingSeen: true,
+    onboardingCompleted: true,
+    onboardingVersion: 2,
 }));
 
 /** Для проверок: какие рецепты есть. */

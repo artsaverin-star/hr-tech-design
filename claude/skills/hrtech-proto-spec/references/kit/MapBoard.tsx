@@ -87,7 +87,7 @@ const readingFor = (features: SectionFeatures): string[] => [
     features.links ?
         '«↩ 01.2» под экраном — возврат назад или вверх, «→ 05.1» — переход вперёд через экран или в другую секцию; клик ведёт к экрану.' :
         '',
-    'Наведите на экран или стрелку — связи подсветятся, остальное погаснет, а на снимке обведётся кнопка. Клик по экрану открывает живое состояние в виде «Сценарий».',
+    'Наведите на экран или стрелку — связи подсветятся, остальное погаснет, а на снимке обведётся кнопка. Клик по экрану открывает это состояние в «Прототипе».',
 ].filter(Boolean);
 
 const readTheme = (): Theme => {
@@ -103,8 +103,7 @@ const figmaNodeUrl = (fileKey: string, nodeId: string): string =>
     `https://www.figma.com/design/${fileKey}/?node-id=${nodeId.replace(':', '-')}`;
 
 /**
- * Адрес живого состояния кадра — тот же, что открывает «Сценарий»: голая сцена без
- * панели режимов, анимации выключены.
+ * Адрес живого состояния кадра для снимка: голая сцена без панели режимов, анимации выключены.
  */
 export const frameSrc = (pathname: string, frame: SpecFrame): string => {
     const params = new URLSearchParams(frame.url.replace(/^\?/, ''));
@@ -173,7 +172,7 @@ const Screen = ({
     return (
         /* hrds-check: allow raw-control — кадр борда со снимком 1:1 (SCREEN в map-board.ts) */
         <button
-            aria-label={`${label} — ${platform === 'mobile' ? 'телефон' : 'десктоп'}, открыть в сценарии`}
+            aria-label={`${label} — ${platform === 'mobile' ? 'телефон' : 'десктоп'}, открыть в прототипе`}
             className={platform === 'mobile' ? `${styles.screen} ${styles.screenMobile}` : styles.screen}
             style={{ height: size.height, width: size.width }}
             type="button"
@@ -432,10 +431,11 @@ const Legend = ({ features }: { features: SectionFeatures }) => (
 
 type MapBoardProps = {
     title: string;
-    onOpenScenario: (id: string) => void;
+    /** Клик по экрану: открыть это состояние в «Прототипе». */
+    onOpenFrame: (id: string) => void;
 };
 
-export const MapBoard = ({ title, onOpenScenario }: MapBoardProps) => {
+export const MapBoard = ({ title, onOpenFrame }: MapBoardProps) => {
     const { pathname, replaceParams, searchParams } = useUrlState();
     const board = useMemo(buildBoard, []);
     const requestedZone = searchParams.get('zone');
@@ -451,7 +451,7 @@ export const MapBoard = ({ title, onOpenScenario }: MapBoardProps) => {
     const dragCleanupRef = useRef<(() => void) | null>(null);
     const panAnimRef = useRef<number | null>(null);
     const flashTimerRef = useRef<number | null>(null);
-    /* Прыжок к узлу после смены секции: по ссылке «Go» или из «Сценария» (`&node=<id>`). */
+    /* Прыжок к узлу после смены секции: по ссылке «Go» или из адреса (`&node=<id>`). */
     const pendingJumpRef = useRef<string | null>(searchParams.get('node'));
     const [zoomPct, setZoomPct] = useState(30);
     const [theme, setTheme] = useState<Theme>(readTheme);
@@ -522,8 +522,9 @@ export const MapBoard = ({ title, onOpenScenario }: MapBoardProps) => {
                                 id: frame.id,
                                 platform: frame.platform,
                                 title: frame.title,
+                                /* Якоря — у своего кадра узла: десктопа или телефона без пары (экран приложения). */
                                 queries:
-                                    frame.platform === 'desktop' ?
+                                    frame === node.frame ?
                                         [
                                             ...(frame.next ?? []).map(normalizeTransition).flatMap(transition => {
                                                 const query = anchorQueryOf(transition);
@@ -559,6 +560,8 @@ export const MapBoard = ({ title, onOpenScenario }: MapBoardProps) => {
                 col: node.col,
                 hasMobile: Boolean(node.mobile),
                 height: node.height,
+                /* Телефон без десктопной пары: узел шире снимка — снимок по центру, ниже подпись. */
+                native: node.frame?.platform === 'mobile',
                 id: node.id,
                 kind: node.kind,
                 row: node.row,
@@ -569,6 +572,8 @@ export const MapBoard = ({ title, onOpenScenario }: MapBoardProps) => {
                 y: node.y,
             })),
             sections: board.sections,
+            /* Сообщения движка о составе (циклические from, опечатки id): приёмка считает их дефектами. */
+            warnings: board.warnings,
         };
 
         return () => {
@@ -1221,7 +1226,7 @@ export const MapBoard = ({ title, onOpenScenario }: MapBoardProps) => {
                                     node.kind === 'decision' ? (
                                         <DiamondNode key={node.id} {...nodeProps(node)} />
                                     ) : (
-                                        <FrameCard key={node.id} {...nodeProps(node)} onOpen={onOpenScenario} />
+                                        <FrameCard key={node.id} {...nodeProps(node)} onOpen={onOpenFrame} />
                                     ),
                                 )}
 

@@ -242,6 +242,8 @@ export interface Board {
     nodeById: Map<string, NodeBox>;
     nodes: NodeBox[];
     sections: SectionBox[];
+    /** Сообщения движка о составе (то же, что в консоли `[spec map]`): приёмка и lint считают их дефектами. */
+    warnings: string[];
     width: number;
 }
 
@@ -258,7 +260,12 @@ const desktopIdOf = (id: string): string => id.replace(/@m$/, '');
 /** Мобильный двойник рисуется рядом с десктопом, отдельного узла у него нет. */
 const isPaired = (id: string): boolean => isMobileId(id) && FRAME_BY_ID.has(desktopIdOf(id));
 
+/** Сообщения текущей сборки борда — `buildBoard` отдаёт их в `warnings`. */
+let WARNINGS: string[] = [];
+
 const warn = (message: string) => {
+    WARNINGS.push(message);
+
     if (typeof console !== 'undefined') {
         console.warn(`[spec map] ${message}`);
     }
@@ -414,7 +421,8 @@ const nodeWidthOf = (id: string): number => {
     }
 
     if (frame.platform === 'mobile') {
-        return SCREEN.mobile.width;
+        // A native-only phone needs room for a readable caption; the bitmap keeps its own size.
+        return SCREEN.desktop.width / 2;
     }
 
     return FRAME_BY_ID.has(`${id}@m`) ? SCREEN.desktop.width + GEO.pairGap + SCREEN.mobile.width : SCREEN.desktop.width;
@@ -548,6 +556,23 @@ const placeLanes = (def: MapSectionDef): Map<string, Placement> => {
         }
     }
 
+    /*
+     * Остались дорожки — их источники ждут друг друга (циклические `from`: «c» растёт из узла «d»,
+     * «d» — из узла «c»). Цикл не раскладываем: это ошибка состава. Но и кадры не теряем молча —
+     * ставим такие дорожки отдельными историями внизу секции и громко сообщаем.
+     */
+    pending.forEach(index => {
+        const lane = def.lanes[index];
+        const row = Math.max(1, cells.length);
+        const cols = columnsFor(lane.nodes, 0);
+
+        warn(`дорожка «${lane.title ?? index}» растёт по кругу: её from «${lane.from}» стоит в дорожке, которая сама ` +
+            'растёт из неё (циклические from); поставлена внизу секции, как придётся, — разорви цикл: одна из дорожек ' +
+            'должна расти из узла, который уже на карте');
+        lane.nodes.forEach((id, offset) => put(row, cols[offset], id, index));
+        spans.push({ max: cols[cols.length - 1], min: cols[0], row });
+    });
+
     return placed;
 };
 
@@ -563,6 +588,8 @@ interface SectionContext {
 }
 
 export const buildBoard = (): Board => {
+    WARNINGS = [];
+
     const defs = buildSectionDefs();
     const nodes: NodeBox[] = [];
     const nodeById = new Map<string, NodeBox>();
@@ -673,13 +700,15 @@ export const buildBoard = (): Board => {
 
                 const size = SCREEN[frame.platform];
                 const screenY = rowTop(p.row) + GEO.laneHead;
+                const width = nodeWidthOf(id);
+                const screenX = colX[p.col] + (frame.platform === 'mobile' ? (width - size.width) / 2 : 0);
                 /* «02.3» — шаг 3 основного пути; «02.3А» — тот же шаг, ветка рядом ниже. Четырёхзвенный
                    адрес гайда («06.4.1.2») владелец назвал непонятным (29.09): глубину даёт буква. */
                 const letter = p.row > 0 ? ROW_LETTERS[(p.row - 1) % ROW_LETTERS.length] : '';
                 const node: NodeBox = {
                     code: `${code}.${stepOfCol[p.col]}${letter}`,
                     col: p.col,
-                    cx: colX[p.col] + size.width / 2,
+                    cx: screenX + size.width / 2,
                     cy,
                     frame,
                     height: SCREEN.desktop.height + GEO.caption,
@@ -688,9 +717,9 @@ export const buildBoard = (): Board => {
                     lane: laneIndex,
                     mobile: frame.platform === 'desktop' ? FRAME_BY_ID.get(`${id}@m`) : undefined,
                     row: p.row,
-                    screen: { height: size.height, width: size.width, x: colX[p.col], y: screenY },
+                    screen: { height: size.height, width: size.width, x: screenX, y: screenY },
                     section: sectionIndex,
-                    width: nodeWidthOf(id),
+                    width,
                     x: colX[p.col],
                     y: screenY,
                 };
@@ -723,8 +752,10 @@ export const buildBoard = (): Board => {
 
     /* ---------------- проход 2: рёбра ---------------- */
 
-    const leftOf = (node: NodeBox) => (node.kind === 'decision' ? node.cx - DIAMOND_R : node.x);
-    const rightOf = (node: NodeBox) => (node.kind === 'decision' ? node.cx + DIAMOND_R : node.x + node.width);
+    const leftOf = (node: NodeBox) => node.kind === 'decision' ? node.cx - DIAMOND_R :
+        node.frame?.platform === 'mobile' ? node.screen.x : node.x;
+    const rightOf = (node: NodeBox) => node.kind === 'decision' ? node.cx + DIAMOND_R :
+        node.frame?.platform === 'mobile' ? node.screen.x + node.screen.width : node.x + node.width;
 
     const addChip = (edge: EdgeDef) => {
         const a = nodeById.get(edge.from)!;
@@ -968,9 +999,19 @@ export const buildBoard = (): Board => {
         const hasIncomingLine = new Set(edges.filter(edge => edge.section === sectionIndex).map(edge => edge.to));
 
         def.lanes.forEach(lane => {
-            const first = nodeById.get(lane.nodes[0]);
+            if (lane.from) {
+                return;
+            }
 
-            if (first && !lane.from && !hasIncomingLine.has(first.id) && inSection(first.id)) {
+            /* Варианты без источника («Варианты: <селект>», `cases`): стрелок между случаями нет, у
+               каждого случая свой вход. Обычная история — вход только у первого узла. */
+            (lane.cases ? lane.nodes : lane.nodes.slice(0, 1)).forEach(id => {
+                const first = nodeById.get(id);
+
+                if (!first || hasIncomingLine.has(first.id) || !inSection(first.id)) {
+                    return;
+                }
+
                 const x2 = leftOf(first);
 
                 edges.push({
@@ -983,7 +1024,7 @@ export const buildBoard = (): Board => {
                     start: { x: x2 - GEO.entry, y: first.cy },
                     to: first.id,
                 });
-            }
+            });
         });
 
         const own = edges.filter(edge => edge.section === sectionIndex);
@@ -1012,6 +1053,7 @@ export const buildBoard = (): Board => {
         nodeById,
         nodes,
         sections,
+        warnings: [...new Set(WARNINGS)],
         width: BOARD_PAD * 2 + boardWidth,
     };
 };

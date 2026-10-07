@@ -24,6 +24,7 @@
  *   --probe '?' --click 'Меню' --fill 'Почта=a@b.c' --scroll bottom
  *                                                пройти путь и получить «Готовый рецепт»
  *   --explore '?'                                нажать по очереди каждую кнопку экрана и сказать, что меняет
+ *   --explore '?' --explore-limit 120            то же с другим лимитом нажатий (по умолчанию 60)
  *   --wiring                                     подключены ли вид спеки и рецепты (шаг 4 регламента)
  *   --controls <id>,<id>                         кнопки кадра манифеста — подобрать `anchor`
  *
@@ -236,6 +237,8 @@ async function launchChrome() {
             '--disable-gpu',
             '--no-first-run',
             '--no-default-browser-check',
+            /* Chrome 154+: без этого свежий профиль на старте качает корневые сертификаты (см. `openClean`). */
+            '--disable-component-update',
             '--window-size=1440,860',
             'about:blank',
         ],
@@ -350,10 +353,17 @@ async function clearStorage(page) {
     await page.evaluate('try { localStorage.clear(); sessionStorage.clear(); } catch {} true').catch(() => undefined);
 }
 
+/**
+ * Первый заход сессии ждёт дольше: Chrome 154+ в первые секунды свежего профиля подменяет проверку
+ * сертификатов и рвёт уже начатые загрузки (ERR_CERT_VERIFIER_CHANGED) — модули не грузятся, кадр белый.
+ */
+let warmedUp = false;
+
 /** Прогрев (сертификат локального HTTPS), чистое хранилище, настоящий заход, шрифты. */
 async function openClean(page, url) {
     await page.navigate(url).catch(() => undefined);
-    await sleep(300);
+    await sleep(warmedUp ? 300 : 4000);
+    warmedUp = true;
     await clearStorage(page);
     await page.navigate(url);
     await page.evaluate('document.fonts ? document.fonts.ready.then(() => true) : true');
@@ -403,6 +413,8 @@ const LIB = `
         if (t === want) return Math.max(top, 3);
         return Math.max(top, t.startsWith(want) ? 2 : t.includes(want) ? 1 : 0);
     }, 0);
+    /* Недоступна сейчас (disabled, fieldset[disabled], aria-disabled): клик ничего не сделает — ждать. */
+    const unavailable = el => el.matches(':disabled') || Boolean(el.closest('[aria-disabled="true"]'));
     const covered = el => {
         const r = el.getBoundingClientRect();
         const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
@@ -650,11 +662,15 @@ const PROBE_STEP = `async (step) => {
     }
     const field = step.type !== undefined;
     let target = null;
-    for (let attempt = 0; attempt < 20 && !target; attempt++) {
-        target = findTarget(step.text, field);
-        if (!target) await new Promise(resolve => setTimeout(resolve, 150));
+    let blocked = null;
+    /* Как рецепт: нашлась, но недоступна — ждём, а не нажимаем соседнюю похожую. */
+    for (let attempt = 0; attempt < 20; attempt++) {
+        const found = findTarget(step.text, field);
+        if (found && !unavailable(found)) { target = found; break; }
+        blocked = found;
+        await new Promise(resolve => setTimeout(resolve, 150));
     }
-    if (!target) return false;
+    if (!target) return blocked ? 'disabled' : false;
     if (field) return typeInto(target, step.type);
     target.click();
     /* Как рецепт: фокус остался на нажатой кнопке — снять (иначе на снимке её тултип). */
@@ -690,6 +706,18 @@ const EXPLORE_STATE = `(() => {
 
 const SIGNATURE = `(() => { ${LIB} return signature(); })()`;
 
+/**
+ * Отпечаток вида экрана (слои + текст продукта, без отметок) — один и тот же у снимка кадра и у
+ * старта разведки: по нему spec-lint понимает, какие кадры показывают экран, с которого начата
+ * разведка, даже если кадр открыт рецептом с `actions`, а разведка — голым адресом.
+ */
+const VIEW_HASH = `sig => {
+    let hash = 5381;
+    for (let i = 0; i < sig.length; i++) hash = ((hash << 5) + hash + sig.charCodeAt(i)) | 0;
+    return (hash >>> 0) + ':' + sig.length;
+}`;
+const VIEW_ID = `(() => { ${LIB} return (${VIEW_HASH})(viewSig()); })()`;
+
 /** «Готовый рецепт» — одинарные кавычки, как требует eslint прототипа. */
 const quote = value => `'${String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
 const recipeOf = steps => steps.map(step => {
@@ -711,15 +739,21 @@ const stepLabel = step => {
     return step.type === undefined ? `«${step.text}»` : `«${step.text}» ← ${step.type}`;
 };
 
-/** Пройти шаги в открытой странице. Возвращает число пройденных и шаги, которые ничего не изменили. */
+/**
+ * Пройти шаги в открытой странице. Возвращает число пройденных, шаги, которые ничего не изменили,
+ * и `blocked` — шаг остановился на недоступной (disabled) кнопке, а не потому, что её нет.
+ */
 async function runSteps(page, steps) {
     let passed = 0;
+    let blocked = false;
     const idle = [];
 
     for (const step of steps) {
         const before = step.scroll === undefined ? await page.evaluate(SIGNATURE) : '';
+        const done = await page.evaluate(`(${PROBE_STEP})(${JSON.stringify(step)})`);
 
-        if (!(await page.evaluate(`(${PROBE_STEP})(${JSON.stringify(step)})`))) {
+        if (done !== true) {
+            blocked = done === 'disabled';
             break;
         }
 
@@ -731,7 +765,7 @@ async function runSteps(page, steps) {
         }
     }
 
-    return { idle, passed };
+    return { blocked, idle, passed };
 }
 
 /* ---------------- Режимы разведки ---------------- */
@@ -753,7 +787,7 @@ async function probe(cdp, query) {
 
             await sleep(SETTLE_MS);
 
-            const { idle, passed } = await runSteps(page, PROBE_STEPS);
+            const { blocked, idle, passed } = await runSteps(page, PROBE_STEPS);
 
             await sleep(PROBE_STEPS.length ? 500 : 0);
 
@@ -776,7 +810,12 @@ async function probe(cdp, query) {
                     `  ! ${stepLabel(step)} ничего не изменил на экране — это не переход (или нужен больший wait)`,
                 ));
 
-                if (passed < PROBE_STEPS.length) {
+                if (passed < PROBE_STEPS.length && blocked) {
+                    console.log(
+                        `  ! ${stepLabel(PROBE_STEPS[passed])} есть, но недоступна (disabled) и за 3 с не ожила — ` +
+                        'ниже экран, на котором путь остановился: что должно случиться раньше, чтобы она ожила?',
+                    );
+                } else if (passed < PROBE_STEPS.length) {
                     console.log(
                         `  ! не нашлось ${stepLabel(PROBE_STEPS[passed])} — ниже экран, на котором путь остановился; ` +
                         'бери текст отсюда',
@@ -826,9 +865,13 @@ async function probe(cdp, query) {
 }
 
 /** Что изменилось на экране после нажатия: «вид» (кадр), «значение», «якорь» и т. д. */
-const classify = (before, after, passed) => {
+const classify = (before, after, passed, blocked) => {
+    if (!passed && blocked) {
+        return { effect: 'недоступна (disabled) на этом экране — не кадр', kind: 'disabled' };
+    }
+
     if (!passed) {
-        return { effect: 'не нажалась', kind: 'error' };
+        return { effect: 'не нажалась: на чистом старте этой кнопки не нашлось', kind: 'error' };
     }
 
     const bare = href => href.replace(/#.*$/, '');
@@ -888,11 +931,13 @@ async function explore(cdp, query) {
     const url = sceneUrl(query, { specprobe: '1' });
     const listPage = await openPage(cdp, VIEWPORT.desktop);
     let items = [];
+    let view = '';
 
     try {
         await openClean(listPage, url);
         await waitSeed(listPage, url);
         await sleep(SETTLE_MS);
+        view = await listPage.evaluate(VIEW_ID);
         items = await listPage.evaluate(`(() => { ${LIB}
             const demo = el => Boolean(el.closest('[data-spec-chrome]')) ||
                 [...document.querySelectorAll('[aria-label], [class]')].some(box => box.contains(el) &&
@@ -906,7 +951,8 @@ async function explore(cdp, query) {
             })).filter(item => item.text);
             const selects = [...scope().querySelectorAll('select')].filter(shown).flatMap(el => {
                 const name = labelsOf(el) || norm(el.getAttribute('aria-label')) || norm(el.getAttribute('name'));
-                return name ? [...el.options].slice(0, 8).map(option => ({
+                /* Все варианты: лишние упираются в общий лимит и печатаются как «не нажаты». */
+                return name ? [...el.options].map(option => ({
                     chrome: demo(el), nav: false, select: name, text: norm(option.textContent),
                 })) : [];
             });
@@ -924,7 +970,7 @@ async function explore(cdp, query) {
     }
 
     /* Демо-панель и основная область — первыми: навигация оболочки (левое меню, шапка) редко меняет вид. */
-    const LIMIT = 60;
+    const LIMIT = Number(args['explore-limit']) > 0 ? Number(args['explore-limit']) : 60;
     const ordered = [...items].sort((a, b) => Number(b.chrome) - Number(a.chrome) || Number(a.nav) - Number(b.nav));
     const taken = ordered.slice(0, LIMIT);
     const skipped = ordered.slice(LIMIT);
@@ -932,42 +978,73 @@ async function explore(cdp, query) {
     console.log(`Адрес: ${url}\nКнопок и вариантов: ${items.length} — нажимаю каждое с чистого старта (1440 px)…\n`);
 
     const report = [];
+    const key = String(query).replace(/^[^?]*/, '') || '?';
+    const nameOf = item => (item.select ? `«${item.select}» = «${item.text}»` : `«${item.text}»`);
 
     for (const item of taken) {
-        const page = await openPage(cdp, VIEWPORT.desktop);
         const step = item.select ? { text: item.select, type: item.text } : { text: item.text };
-        const name = item.select ? `«${item.select}» = «${item.text}»` : `«${item.text}»`;
+        let page = null;
 
+        /* Сбой одного нажатия (упал Chrome, страница не открылась) не обрывает разведку: причина —
+           в отчёт и на экран, остальные нажатия сохраняются, итог — с ошибкой. */
         try {
+            page = await openPage(cdp, VIEWPORT.desktop);
             await openClean(page, url);
             await waitSeed(page, url);
             await sleep(900);
 
             const before = await page.evaluate(EXPLORE_STATE);
-            const { passed } = await runSteps(page, [step]);
+            const { blocked, passed } = await runSteps(page, [step]);
             const after = await page.evaluate(EXPLORE_STATE);
-            const { effect, kind } = classify(before, after, passed);
+            const { effect, kind } = classify(before, after, passed, blocked);
 
             report.push({ chrome: item.chrome, effect, kind, select: item.select, text: item.text });
-            console.log(`  ${kind === 'view' ? '▶' : ' '} ${item.chrome ? '⚙ ' : ''}${name} → ${effect}`);
+            console.log(`  ${{ error: '✗', view: '▶' }[kind] ?? ' '} ${item.chrome ? '⚙ ' : ''}${nameOf(item)} → ${effect}`);
         } catch (error) {
-            report.push({ chrome: item.chrome, effect: `ошибка: ${error instanceof Error ? error.message : error}`, kind: 'error', text: item.text });
+            const effect = `ошибка: ${error instanceof Error ? error.message : error}`;
+
+            report.push({ chrome: item.chrome, effect, kind: 'error', select: item.select, text: item.text });
+            console.log(`  ✗ ${item.chrome ? '⚙ ' : ''}${nameOf(item)} → ${effect}`);
         } finally {
-            await clearStorage(page);
-            await page.close();
+            if (page) {
+                try {
+                    await clearStorage(page);
+                    await page.close();
+                } catch {
+                    /* вкладка уже недоступна — сбой записан выше */
+                }
+            }
         }
     }
 
     if (skipped.length) {
-        console.log(`\nНе нажаты (лимит ${LIMIT}, в основном навигация оболочки): ${skipped.map(item => `«${item.text}»`).join(', ')}`);
+        console.log(
+            `\nНе нажаты (лимит ${LIMIT}): ${skipped.map(nameOf).join(', ')} — повтори с --explore-limit ` +
+            `${ordered.length} или разведай их экран отдельно; spec-lint напомнит о них предупреждением.`,
+        );
     }
 
     const out = path.join(ROOT, 'src', 'spec-explore.json');
     const saved = fs.existsSync(out) ? JSON.parse(fs.readFileSync(out, 'utf8')) : {};
-    const key = String(query).replace(/^[^?]*/, '') || '?';
+    const failed = report.filter(item => item.kind === 'error');
 
-    saved[key] = { report, skipped: skipped.map(item => item.text) };
+    saved[key] = {
+        report,
+        view,
+        skipped: skipped.map(item => (item.select ? { select: item.select, text: item.text } : { text: item.text })),
+    };
     fs.writeFileSync(out, `${JSON.stringify(saved, null, 2)}\n`);
+
+    if (failed.length) {
+        /* Сорванная разведка — не «чисто»: spec-lint не пропустит эти записи, пока прогон не пройдёт. */
+        console.log(
+            `\n✗ Разведка ${key} сорвалась на ${failed.length} из ${report.length}: ` +
+            `${failed.map(item => `${nameOf(item)} — ${item.effect}`).join('; ')}. ` +
+            `Почини (дев-сервер, адрес) и повтори --explore '${key}'.`,
+        );
+        process.exitCode = 1;
+    }
+
     console.log(
         '\n▶ — меняет ВИД экрана: это кадр, вход в сценарий или строка шапки spec-sections.ts ' +
         '«НЕ ПОКАЗЫВАЕМ: «кнопка» — причина» (spec-lint сверит, L22). ⚙ — панель прототипа: её пункты — ' +
@@ -1334,6 +1411,8 @@ async function main() {
 
                 const seedState = await waitSeed(page, url);
                 const problem = await seedProblem(page, seedState);
+                /* Отпечаток рецепта, с которым снят кадр: spec-lint сверит его с текущим рецептом. */
+                const recipe = await page.evaluate('document.documentElement.dataset.specSeedRecipe || ""');
 
                 if (problem) {
                     seedFailures.push(`${frame.id}: ${problem}`);
@@ -1372,11 +1451,7 @@ async function main() {
                         overflow: Math.round(right - ${viewport.width}),
                         text: productText().toLowerCase().slice(0, 4000),
                         tooltip: tooltipText(),
-                        view: (sig => {
-                            let hash = 5381;
-                            for (let i = 0; i < sig.length; i++) hash = ((hash << 5) + hash + sig.charCodeAt(i)) | 0;
-                            return (hash >>> 0) + ':' + sig.length;
-                        })(viewSig()),
+                        view: (${VIEW_HASH})(viewSig()),
                     };
                 })()`);
                 const overflowX = frame.platform === 'mobile' && seen.overflow > 8;
@@ -1401,6 +1476,7 @@ async function main() {
                     height: Math.round(viewport.height * SCALE),
                     missing: lost,
                     overflowX: Boolean(overflowX),
+                    recipe: recipe || undefined,
                     seed: seedState,
                     text: seen.text,
                     tooltip: seen.tooltip || undefined,
