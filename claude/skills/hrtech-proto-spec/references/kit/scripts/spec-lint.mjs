@@ -754,7 +754,9 @@ if (FULL) {
     /* Блок «НЕ ПОКАЗЫВАЕМ»: от метки до конца шапки-комментария; из него — только «цитаты» с причинами. */
     const hiddenStart = header.search(/НЕ ПОКАЗЫВАЕМ/i);
     const hiddenBlock = hiddenStart < 0 ? '' : header.slice(hiddenStart, header.indexOf('*/', hiddenStart) >>> 0);
-    const hiddenItems = [...hiddenBlock.matchAll(/«([^»]+)»\s*[—–-]?\s*([^;«\n]*)/g)]
+    /* Причина — до «;» или конца строки; «id кадра» в ней (латиницей, без пробелов) — часть причины:
+       «Кнопка» — повторяет «mars-draft»; «Другая» — вне прототипа. */
+    const hiddenItems = [...hiddenBlock.matchAll(/«([^»]+)»\s*[—–-]?\s*((?:[^;«\n]|«[\w@-]+»)*)/g)]
         .map(match => ({ reason: norm(match[2]), text: norm(match[1]) }));
     const frameIds = new Set(FRAMES.map(frame => frame.id));
 
