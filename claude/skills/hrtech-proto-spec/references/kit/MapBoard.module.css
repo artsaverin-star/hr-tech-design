@@ -302,6 +302,33 @@
     max-width: 1320px;
 }
 
+/*
+ * Задача версии — «Проблема» и «Что делаем»: подпись слева, текст справа, подписи одной ширины, чтобы текст обеих
+ * строк начинался с одной вертикали. Подпись — акцентом, как код «00» над ней: это первое, что читают на карте.
+ * Отступы сверху и снизу — `INTRO.taskGap` в map-board.ts вместе с gap блока.
+ */
+/* hrds-check: allow size-raw — ширина колонки текста внутри INTRO.width 1480 (map-board.ts) */
+.introTask {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: var(--hr-space-xs) var(--hr-space-xl);
+    max-width: 1320px;
+    margin: var(--hr-space-xs) 0;
+}
+
+.introTaskRow {
+    display: contents;
+}
+
+.introTaskLabel,
+.introTaskText {
+    margin: 0;
+}
+
+.introTaskLabel {
+    color: var(--accent-ink);
+}
+
 /* Тихий цвет списка наследуют вложенные `<Text as="li">`: у Text без пропа `color` своего цвета нет. */
 /* hrds-check: allow size-raw — ширина колонки текста внутри INTRO.width 1480 (map-board.ts) */
 .introList {

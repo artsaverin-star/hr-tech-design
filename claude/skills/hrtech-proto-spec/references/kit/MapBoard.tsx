@@ -38,7 +38,9 @@ import styles from './MapBoard.module.css';
  * из `map-board.ts`. Наведение на экран или переход подсвечивает его связи, остальные гаснут,
  * а на снимке обводится кнопка, по которой нажали.
  *
- * Выбранная секция живёт в адресе (`&zone=01`), тема — в localStorage.
+ * Выбранная секция живёт в адресе (`&zone=01`), тема — в localStorage. Без `zone` карта открывается на
+ * «00 · Как читать»: там задача версии — проблема и что делаем (владелец 22.10: «хочется видеть задачу или
+ * проблему, которую решаем»). Ссылка на экран без секции (`&node=<id>`) открывает секцию этого экрана.
  */
 
 const MIN_SCALE = 0.04;
@@ -439,10 +441,11 @@ export const MapBoard = ({ title, onOpenFrame }: MapBoardProps) => {
     const { pathname, replaceParams, searchParams } = useUrlState();
     const board = useMemo(buildBoard, []);
     const requestedZone = searchParams.get('zone');
-    const selected: SectionBox | null =
-        requestedZone === INTRO_CODE ?
-            null :
-            (board.sections.find(section => section.code === requestedZone) ?? board.sections[0] ?? null);
+    /* Без `zone` — «00» с задачей, а не первая секция; `&node=<id>` без `zone` — секция этого экрана. */
+    const requestedNode = requestedZone === null ? board.nodeById.get(searchParams.get('node') ?? '') : undefined;
+    const selected: SectionBox | null = requestedNode ?
+        (board.sections[requestedNode.section] ?? null) :
+        (board.sections.find(section => section.code === requestedZone) ?? null);
     const selectedCode = selected?.code ?? INTRO_CODE;
 
     const viewportRef = useRef<HTMLDivElement | null>(null);
@@ -852,6 +855,12 @@ export const MapBoard = ({ title, onOpenFrame }: MapBoardProps) => {
         }
     };
 
+    /* Задача версии во «00» — над легендой; полей нет — остаётся одна `goal`, как раньше. */
+    const taskRows = [
+        { label: 'Проблема', text: board.meta.problem },
+        { label: 'Что делаем', text: board.meta.solution },
+    ].filter(row => row.text);
+
     const zoneOptions = [
         option(INTRO_CODE, '00 · Как читать'),
         ...board.sections.map(section => option(section.code, `${section.code} · ${section.title}`)),
@@ -1030,10 +1039,11 @@ export const MapBoard = ({ title, onOpenFrame }: MapBoardProps) => {
                         style={{ height: canvasSize.height, width: canvasSize.width }}
                     >
                         {!selected ? (
+                            /* min-height: высота — оценка движка по длине текста; ошибётся — блок вырастет. */
                             <section
                                 className={styles.intro}
                                 style={{
-                                    height: board.intro.height,
+                                    minHeight: board.intro.height,
                                     left: CANVAS_PAD,
                                     top: CANVAS_PAD,
                                     width: board.intro.width,
@@ -1051,9 +1061,25 @@ export const MapBoard = ({ title, onOpenFrame }: MapBoardProps) => {
                                         ` · снимки от ${new Date(SNAPSHOTS_GENERATED_AT).toLocaleDateString('ru-RU')}` :
                                         ' · снимков ещё нет'}
                                 </Text>
-                                <Text as="p" className={styles.introText} typography="bodyL">
-                                    {BOARD_META.goal}
-                                </Text>
+                                {board.meta.goal ? (
+                                    <Text as="p" className={styles.introText} typography="bodyL">
+                                        {board.meta.goal}
+                                    </Text>
+                                ) : null}
+                                {taskRows.length ? (
+                                    <dl aria-label="Задача версии" className={styles.introTask}>
+                                        {taskRows.map(row => (
+                                            <div key={row.label} className={styles.introTaskRow}>
+                                                <Text as="dt" className={styles.introTaskLabel} typography="bodyL" weight="medium">
+                                                    {row.label}
+                                                </Text>
+                                                <Text as="dd" className={styles.introTaskText} typography="bodyL">
+                                                    {row.text}
+                                                </Text>
+                                            </div>
+                                        ))}
+                                    </dl>
+                                ) : null}
                                 <Legend features={board.features} />
                                 <ol className={styles.introList}>
                                     {readingFor(board.features).map(line => (

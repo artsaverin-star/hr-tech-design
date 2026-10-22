@@ -720,7 +720,8 @@ if (FULL) {
 
     (sections.MAP_RETIRED ?? []).forEach(group => {
         if (!String(group.reason ?? '').trim()) {
-            defect('L12', `MAP_RETIRED ${group.ids.join(', ')}`, 'нет причины', 'одна фраза: почему продукт от этого отказался');
+            defect('L12', `MAP_RETIRED ${group.ids.join(', ')}`, 'нет причины',
+                'одна фраза: от чего продукт отказался — или что задача этой версии эти экраны не меняет и чьё это решение (только владельца)');
         }
     });
 
@@ -732,7 +733,9 @@ if (FULL) {
 
     Object.entries(BOARD_META).forEach(([key, value]) => {
         if (TEMPLATE_LEFTOVER.test(String(value))) {
-            defect('L14', `BOARD_META.${key}`, 'не заполнено', 'тикет, ссылка и цель продукта из запроса пользователя');
+            defect('L14', `BOARD_META.${key}`, 'не заполнено', ['problem', 'solution'].includes(key) ?
+                'задача версии — из раздела «Цель и контекст» БТ или из тикета, своих слов не добавлять; источника нет — удали поле' :
+                'тикет, ссылка и цель продукта из запроса пользователя');
         }
     });
 

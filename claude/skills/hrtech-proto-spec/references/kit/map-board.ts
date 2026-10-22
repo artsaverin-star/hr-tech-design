@@ -36,7 +36,7 @@ import {
     type SpecStatus,
     type SpecTransition,
 } from './spec';
-import { MAP_RETIRED, MAP_SECTIONS, type MapLaneDef, type MapSectionDef } from './spec-sections';
+import { BOARD_META, MAP_RETIRED, MAP_SECTIONS, type MapLaneDef, type MapSectionDef } from './spec-sections';
 import { SNAPSHOTS } from './spec-snapshots';
 
 /* ------------------------------------------------------------------ */
@@ -127,7 +127,24 @@ const BOARD_PAD = 96;
  * моноширинным неотличима от шестёрки («02.2б» читалось как «02.26»).
  */
 const ROW_LETTERS = 'АБВГДЕЖИКЛМН';
-const INTRO = { height: 640, width: 1480 } as const;
+/**
+ * «00 · Как читать». `base` — код, название, строка тикета, легенда, семь строк «как читать» и ссылки; к ней
+ * прибавляются строки `goal` и задачи версии (`BOARD_META.problem` / `solution`). Замеров DOM нет: строки
+ * считаются по длине текста — bodyL ≈ 9 px на знак, то есть `goalChars` знаков во всю колонку 1320 и `taskChars`
+ * рядом с подписью «Что делаем» (сверено снимками «Мои встречи» v7, 22.10.2026: `goal` в три строки даёт прежние
+ * 640). `line` — интерлиньяж bodyL, `gap` — зазор блока, `taskGap` — зазор и поля задачи, `rowGap` — между её
+ * строками. На холсте блок растёт по содержимому (`min-height`): промах оценки сдвигает только «Обзор».
+ */
+const INTRO = {
+    base: 544,
+    gap: 12,
+    goalChars: 135,
+    line: 28,
+    rowGap: 8,
+    taskChars: 125,
+    taskGap: 32,
+    width: 1480,
+} as const;
 
 /* ------------------------------------------------------------------ */
 /* Типы борда                                                           */
@@ -176,6 +193,13 @@ export interface LaneBox {
     x: number;
     /** Верх ряда (заголовок дорожки стоит здесь). */
     y: number;
+}
+
+/** Тексты «00»: что за продукт (`goal`) и задача версии. Пустое поле — `undefined`, его строки на карте нет. */
+export interface BoardMeta {
+    goal?: string;
+    problem?: string;
+    solution?: string;
 }
 
 /** Какие формы есть в секции — легенда показывает только их. */
@@ -242,6 +266,8 @@ export interface Board {
     nodeById: Map<string, NodeBox>;
     nodes: NodeBox[];
     sections: SectionBox[];
+    /** Тексты «00»: что за продукт, проблема и что делаем. */
+    meta: BoardMeta;
     /** Сообщения движка о составе (то же, что в консоли `[spec map]`): приёмка и lint считают их дефектами. */
     warnings: string[];
     width: number;
@@ -259,6 +285,32 @@ const isMobileId = (id: string): boolean => id.endsWith('@m');
 const desktopIdOf = (id: string): string => id.replace(/@m$/, '');
 /** Мобильный двойник рисуется рядом с десктопом, отдельного узла у него нет. */
 const isPaired = (id: string): boolean => isMobileId(id) && FRAME_BY_ID.has(desktopIdOf(id));
+
+/**
+ * Тексты «00» из состава. `problem` / `solution` необязательны, у прототипов, собранных до них, их нет вовсе (и
+ * `BOARD_META` там `as const`), а `goal` могут удалить: читаем через широкий тип — иначе движок, обновлённый
+ * `spec-kit-install.mjs --force`, не собрался бы на старом составе.
+ */
+const readMeta = (): BoardMeta => {
+    /* `status` — обязательное поле, общее у всех версий: без общего поля TS отверг бы присваивание («weak type»). */
+    const meta: BoardMeta & { status?: unknown } = BOARD_META;
+    const text = (value?: string) => value?.trim() || undefined;
+
+    return { goal: text(meta.goal), problem: text(meta.problem), solution: text(meta.solution) };
+};
+
+const linesOf = (text: string | undefined, chars: number): number => (text ? Math.ceil(text.length / chars) : 0);
+
+/** Высота «00»: база плюс строки `goal` и задачи (см. `INTRO`). */
+const introHeight = (meta: BoardMeta): number => {
+    const goal = linesOf(meta.goal, INTRO.goalChars);
+    const task = [meta.problem, meta.solution].filter((text): text is string => Boolean(text));
+    const taskLines = task.reduce((sum, text) => sum + linesOf(text, INTRO.taskChars), 0);
+
+    return INTRO.base +
+        (goal ? INTRO.gap + goal * INTRO.line : 0) +
+        (task.length ? INTRO.taskGap + taskLines * INTRO.line + (task.length - 1) * INTRO.rowGap : 0);
+};
 
 /** Сообщения текущей сборки борда — `buildBoard` отдаёт их в `warnings`. */
 let WARNINGS: string[] = [];
@@ -600,7 +652,8 @@ export const buildBoard = (): Board => {
     const chipsOut: Record<string, GoChip[]> = {};
     const decisionInput: Record<string, string> = {};
 
-    const intro: Rect = { height: INTRO.height, width: INTRO.width, x: BOARD_PAD, y: BOARD_PAD };
+    const meta = readMeta();
+    const intro: Rect = { height: introHeight(meta), width: INTRO.width, x: BOARD_PAD, y: BOARD_PAD };
     let cursorY = intro.y + intro.height + SECTION.gap;
     let boardWidth: number = INTRO.width;
 
@@ -1050,6 +1103,7 @@ export const buildBoard = (): Board => {
         },
         height: (last ? last.y + last.height : intro.y + intro.height) + BOARD_PAD,
         intro,
+        meta,
         nodeById,
         nodes,
         sections,
