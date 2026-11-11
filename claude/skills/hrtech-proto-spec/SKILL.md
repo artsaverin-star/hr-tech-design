@@ -12,6 +12,18 @@ description: >-
   из спеки и его запуска (это hrtech-prototipnitsa) и НЕ для вопроса «как это на проде» (это hrtech-arcadia).
 ---
 
+## Общие знания и пути
+
+Установленный каталог умения может быть симлинком. Получи его реальный путь командой
+`cd "<каталог этого SKILL.md>" && pwd -P` и разрешай ссылки ниже относительно этого пути,
+а не рабочей папки чата. Пути `claude/…` внутри общих документов отсчитываются от корня
+пакета — на три уровня выше реального каталога умения.
+
+Для работы с Figma прочитай [общий протокол](../../commands/hrtech.md), нужные разделы
+[каталога HRDS](../../commands/hrds-knowledge.md) и
+[заметок команды](../../knowledge/team-notes.md). Для задачи только по чтению кода
+загружать материалы Figma не требуется.
+
 ## Примеры
 
 - «сделай карту сценариев как в фигме — с красивыми стрелками»
@@ -23,15 +35,15 @@ description: >-
 
 Здесь только мост «код прототипа ⇄ спека-борд»: контракт спек-манифеста, «Карта» (`?spec=map`)
 и перенос состояний прототипа в Figma с последующей сверкой. Остальное — у соседей: грамматика
-тёмного борда (дорожки, ромбы, веер, светофор, цифры раскладки) — `claude/skills/hrtech-spec/SKILL.md`;
-ключи ДС-компонентов и блюпринты — `claude/commands/hrds-knowledge.md`; правила песочницы, `hrtechScan`
-и `hrtechDiff` — `claude/commands/hrtech.md`; чтение прода — `claude/skills/hrtech-arcadia/SKILL.md`;
-создание, структура и запуск самого прототипа — `claude/skills/hrtech-prototipnitsa/SKILL.md`.
+тёмного борда (дорожки, ромбы, веер, светофор, цифры раскладки) — [hrtech-spec](../hrtech-spec/SKILL.md);
+ключи ДС-компонентов и блюпринты — [hrds-knowledge.md](../../commands/hrds-knowledge.md); правила песочницы, `hrtechScan`
+и `hrtechDiff` — [hrtech.md](../../commands/hrtech.md); чтение прода — [hrtech-arcadia](../hrtech-arcadia/SKILL.md);
+создание, структура и запуск самого прототипа — [hrtech-prototipnitsa](../hrtech-prototipnitsa/SKILL.md).
 
 **Булочка** — набор HR TECH DESIGN для агентов дизайнеров (репозиторий hr-plugin): плагин Figma
 desktop, MCP-сервер `figma-hrtech` (инструменты `figma_execute`, `figma_take_screenshot`, …), через
-который агент работает с открытым файлом Figma, и скилы `hrtech-*`. Пути `claude/skills/…` и
-`claude/commands/…` выше — файлы этого репозитория. Есть ли Булочка у агента, видно по списку его
+который агент работает с открытым файлом Figma, и скилы `hrtech-*`. Ссылки выше ведут к файлам
+установленного пакета Булочки. Есть ли Булочка у агента, видно по списку его
 MCP-инструментов: нет `figma-hrtech` — §4–§6 (стройка и синк кадров в Figma) недоступны, их не
 выполнять и не имитировать; «Карта» (§0–§3) и проверки комплекта от Булочки не зависят.
 
@@ -62,7 +74,7 @@ MCP-инструментов: нет `figma-hrtech` — §4–§6 (стройк�
 Этот раздел написан так, чтобы результат не зависел от модели: всё творческое сведено к
 заполнению трёх файлов по шаблону, тексты берутся из вывода скрипта, а качество проверяют
 три скрипта и лист-сетка. `<скил>` — папка, где лежит этот `SKILL.md` (у Claude Code —
-`~/.claude/skills/hrtech-proto-spec`, у Codex — `~/.codex/skills/hrtech-proto-spec`,
+`~/.claude/skills/hrtech-proto-spec`, у Codex — `~/.agents/skills/hrtech-proto-spec`,
 в Прототипнице — `.agents/skills/hrtech-proto-spec`). `<адрес>` — адрес прототипа на
 дев-сервере: `https://prototipnitsa.local.yandex-team.ru:<порт>/prototype-builds/<slug>/`.
 Все команды `node src/scripts/…` запускаются из папки прототипа; адреса в zsh — в одинарных
@@ -465,7 +477,7 @@ Deep-link'и образца (адресуемость состояний — ф�
 ## 4. Стройка кадров в Figma — только мост Булочки (MCP `figma-hrtech`)
 
 - **Только `figma-hrtech` (`figma_execute` и родные тулзы моста). Официальный `mcp__figma__*`
-  не трогать даже на чтение** — правило из `claude/skills/hrtech-audit/SKILL.md`, вместе с его
+  не трогать даже на чтение** — правило из [hrtech-audit](../hrtech-audit/SKILL.md), вместе с его
   единственным исключением: разово достать `componentKey` неизвестного компонента из опубликованной
   библиотеки (`search_design_system`), дальше снова Булочка — как раз на случай гочи про
   неимпортируемые ключи remote-библиотеки ниже. Мост отвалился → ждать / просить переоткрыть
@@ -476,7 +488,7 @@ Deep-link'и образца (адресуемость состояний — ф�
   подписи, светофор, три канонические формы conn-вектора, аудит связности) берётся из hrtech-spec.
   Главы и дорожки = `MAP_SECTIONS` из `spec-sections.ts` (тот же состав, что веб-карта; у старых
   прототипов без него — зоны манифеста и `SPEC_LAYOUT`), порядок кадров в дорожке = её `nodes`.
-- Кадры собирать по ключам из `claude/commands/hrds-knowledge.md` и блюпринтам; где есть готовый
+- Кадры собирать по ключам из [hrds-knowledge.md](../../commands/hrds-knowledge.md) и блюпринтам; где есть готовый
   кадр-донор в существующей спеке (см. `figmaNodeId` и «Где в спеке» из SPEC-VS-PROD.md) — **клонировать
   донора и менять данные**, а не рисовать заново (правило hrtech-spec §6).
 - Построил кадр → **сразу впиши его id в `figmaNodeId`** соответствующего `SpecFrame`. Снять карту
@@ -491,7 +503,7 @@ return s.children.filter(n => n.type === 'FRAME').map(n => ({ id: n.id, name: n.
   `importComponentByKeyAsync` отвечает «Could not find a published component» (у моста нет
   REST-токена). Мастера харвестить с уже размещённых инстансов через `getMainComponentAsync`
   (медленно, таймаут ~22 с — не гонять десятками в цикле) или ставить временную заглушку и просить
-  юзера подменить пикером (источник: `claude/skills/hrtech-mobile/SKILL.md`, «Гочи»).
+  юзера подменить пикером (источник: [hrtech-mobile](../hrtech-mobile/SKILL.md), «Гочи»).
 - **Не-ДС части прототипа в Figma прямого компонента не имеют**: рейл интранета Orbit
   (`IntranetShell.tsx`), SVG-иконки Orbit (`OrbitIcons.tsx`: `company`, `aai`, `financeChart`,
   `financeCoinOn`), продовые PNG/SVG-иллюстрации заглушек (`emptyLight.png`, `nothingFoundLight.png`,
@@ -522,7 +534,7 @@ return s.children.filter(n => n.type === 'FRAME').map(n => ({ id: n.id, name: n.
 
 ## 6. Ограничения песочницы (кратко)
 
-Полные правила — `claude/commands/hrtech.md` (пп. 0a–0d) и `claude/skills/hrtech-audit/SKILL.md`
+Полные правила — [hrtech.md](../../commands/hrtech.md) (пп. 0a–0d) и [hrtech-audit](../hrtech-audit/SKILL.md)
 («Как сканировать, не вешая песочницу»). Минимум, который ломают чаще всего:
 
 - `figma_execute` живёт **~7–10 с**, песочница однопоточная, зависший скрипт не прервать.
@@ -546,7 +558,7 @@ return s.children.filter(n => n.type === 'FRAME').map(n => ({ id: n.id, name: n.
   Любая другая правка `src/` витрины — только по явной просьбе юзера и отдельным пунктом PR:
   общий код идёт без automerge (hrtech-prototipnitsa §2).
 - Регламент работы с Прототипницей (структура репо, запуск, arc-процесс, что можно и нельзя трогать
-  вне папки) — `claude/skills/hrtech-prototipnitsa/SKILL.md`; здесь не дублируется.
+  вне папки) — [hrtech-prototipnitsa](../hrtech-prototipnitsa/SKILL.md); здесь не дублируется.
 - Логику и вёрстку прототипа при синке не «улучшать»: расхождение с макетом — задача на правку
   макета (§5), расхождение с продом — уже разобрано в `SPEC-VS-PROD.md` прототипа.
 

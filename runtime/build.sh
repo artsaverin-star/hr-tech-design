@@ -5,10 +5,12 @@
 set -e
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$DIR"
-npx esbuild src/local.ts --bundle --platform=node --format=esm --target=node18 --minify \
-  --outfile=runtime/bin/bridge.mjs \
+npx esbuild src/local.ts --bundle --platform=node --format=esm --target=node20.19 --minify \
+  --outfile=runtime/bin/engine.mjs \
   --banner:js="import{createRequire as ___cr}from'module';const require=___cr(import.meta.url);"
 # Some bundled dependency templates contain line-ending spaces. They are not
 # semantically meaningful, but make repository-wide diff checks noisy.
-perl -pi -e 's/[ \t]+$//' runtime/bin/bridge.mjs
+perl -pi -e 's/[ \t]+$//' runtime/bin/engine.mjs
 echo "✓ Собрано: runtime/bin/bridge.mjs"
+
+node scripts/build-update-manifest.mjs

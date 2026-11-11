@@ -9,6 +9,7 @@ const setupSource = fs.readFileSync(new URL('../setup.sh', import.meta.url), 'ut
 const installSource = fs.readFileSync(new URL('../install.sh', import.meta.url), 'utf8');
 const repairSource = fs.readFileSync(new URL('./repair.sh', import.meta.url), 'utf8');
 const connectMcpSource = fs.readFileSync(new URL('./connect-mcp.sh', import.meta.url), 'utf8');
+const agentPathsSource = fs.readFileSync(new URL('./agent-paths.sh', import.meta.url), 'utf8');
 const linkKnowledgeSource = fs.readFileSync(new URL('./link-knowledge.sh', import.meta.url), 'utf8');
 const writeToolsSource = fs.readFileSync(new URL('../src/core/write-tools.ts', import.meta.url), 'utf8');
 const websocketConnectorSource = fs.readFileSync(new URL('../src/core/websocket-connector.ts', import.meta.url), 'utf8');
@@ -70,18 +71,22 @@ test('setup wires the bridge and knowledge for every supported agent', () => {
     assert.match(connectMcpSource, /"\$CLAUDE_BIN" mcp add figma-hrtech -s user/);
     // Официальный установщик Codex CLI кладёт бинарь в ~/.local/bin — без этого пути
     // установка молча пропускает Codex и дизайнер остаётся без моста.
-    assert.match(connectMcpSource, /\$HOME\/\.local\/bin\/codex/);
-    assert.match(connectMcpSource, /\/Applications\/ChatGPT\.app\/Contents\/Resources\/codex/);
-    // Перед add обязателен remove: иначе «already exists» роняет установку с кодом 1.
-    assert.match(connectMcpSource, /mcp remove figma-hrtech[\s\S]*?mcp add figma-hrtech/);
+    assert.match(agentPathsSource, /\$HOME\/\.local\/bin\/codex/);
+    assert.match(agentPathsSource, /\/Applications\/Codex\.app\/Contents\/Resources\/codex/);
+    assert.match(agentPathsSource, /\/Applications\/ChatGPT\.app\/Contents\/Resources\/codex/);
+    // Codex add — upsert. Ошибка add не должна стирать ранее рабочую настройку.
+    assert.doesNotMatch(connectMcpSource, /"\$CODEX_BIN" mcp remove/);
     // bash 3.2 (штатный на macOS) падает на "${ARR[@]}" с пустым массивом под set -u.
     assert.doesNotMatch(connectMcpSource, /^set -u/m);
-    assert.match(setupSource, /if \[ -z "\$CODEX_BIN" \] && \[ -z "\$CLAUDE_BIN" \]; then/);
+    assert.match(setupSource, /if \[ -z "\$CODEX_BIN" \] && \[ -z "\$CLAUDE_BIN" \] && \[ -z "\$\{CLAUDE_DESKTOP_APP:-\}" \]; then/);
     assert.match(setupSource, /scripts\/link-knowledge\.sh/);
     // Codex CLI ставим только когда помощника нет вообще — не доустанавливать второго агента.
-    assert.match(installSource, /https:\/\/chatgpt\.com\/codex\/install\.sh/);
-    assert.match(installSource, /! command -v claude >\/dev\/null 2>&1 && \\/);
-    assert.match(linkKnowledgeSource, /CODEX_SKILLS_ROOT="\$\{CODEX_HOME:-\$HOME\/\.codex\}\/skills"/);
+    assert.doesNotMatch(installSource, /brew install|npm install -g|xcode-select --install/);
+    assert.match(installSource, /bootstrap-package\.mjs/);
+    for (const source of [setupSource, connectMcpSource]) {
+        assert.match(source, /scripts\/agent-paths\.sh/);
+    }
+    assert.match(linkKnowledgeSource, /CODEX_SKILLS_ROOT="\$HOME\/\.agents\/skills"/);
     assert.match(linkKnowledgeSource, /CLAUDE_SKILLS_ROOT="\$HOME\/\.claude\/skills"/);
     assert.match(linkKnowledgeSource, /CLAUDE_COMMANDS_ROOT\/hrtech\.md"/);
 });

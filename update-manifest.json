@@ -1,0 +1,210 @@
+{
+  "schemaVersion": 1,
+  "version": "4.28",
+  "files": [
+    {
+      "path": "runtime/bin/bridge.mjs",
+      "sha256": "bb8f5a696f047f2cd4b3c5cdf8244659ae62650dd617236687f8e4e32d7d3207"
+    },
+    {
+      "path": "runtime/bin/engine.mjs",
+      "sha256": "67fa9d17777cc94c930db822163def2f1445b06eb69b52f05ba927a0fc75cb55"
+    },
+    {
+      "path": "runtime/bin/supervisor.mjs",
+      "sha256": "4b0c3db05b10004093c6960091a26f24efd514412b0b78b2f1cf746c0e82d18f"
+    },
+    {
+      "path": "scripts/agent-paths.sh",
+      "sha256": "23e54982698280c3bb965d75f16707c5b7ad7bed4f672f2315b8c53aaa59ee9d"
+    },
+    {
+      "path": "scripts/bootstrap-package.mjs",
+      "sha256": "240a8d44893f394e3f81bb8d62ae6c2ce1053b0754faa40da7cf67c85781879d"
+    },
+    {
+      "path": "scripts/configure-claude-desktop.mjs",
+      "sha256": "5a53e18130ed944cc8cce8f28872ddcbd0c71bfde5a465d366b8669fdfe21f2b"
+    },
+    {
+      "path": "scripts/connect-mcp.sh",
+      "sha256": "543a423d1e074e682fb337e80b6855d9c91ff1616f3a2930c47cb798374f2c94"
+    },
+    {
+      "path": "scripts/diagnose-mcp.mjs",
+      "sha256": "161f467c0db568ee9a54f2e2d8b539d42bce902f476bf7fe4275360804cd69b0"
+    },
+    {
+      "path": "scripts/install-next-steps.sh",
+      "sha256": "99dcbc3cc07017e0c2bcc9c23d3e40cf984af9de5f13dea370d92f47f7bf4c2f"
+    },
+    {
+      "path": "scripts/link-knowledge.sh",
+      "sha256": "acaf141c236bd8434646ec72f5bf086fdf6edd74245016c54c00efafa83ab57c"
+    },
+    {
+      "path": "scripts/repair.sh",
+      "sha256": "721d40ad4789debdd3141f631d4d7600789770648fa10f5edd0379b4eadbebbc"
+    },
+    {
+      "path": "scripts/update-package.mjs",
+      "sha256": "3a8f2f4200e5beb8d9d7d3e622b5241e18711ee82cd4acbfdc18b2d0be91d6de"
+    },
+    {
+      "path": "claude/skills/hrtech/SKILL.md",
+      "sha256": "c89374404d9e53a13099ade8f23ba0e6e0a54efeaba0e2d552ae4760b16e7cca"
+    },
+    {
+      "path": "claude/skills/hrtech-arcadia/SKILL.md",
+      "sha256": "4681400b5a21b89e51fd155135b455c0a4f667eb9441958044bf3647fac05261"
+    },
+    {
+      "path": "claude/skills/hrtech-audit/SKILL.md",
+      "sha256": "0a45262401a525e61eae2d8ff0801735347591c07707017c6ca9ac1822612467"
+    },
+    {
+      "path": "claude/skills/hrtech-mobile/SKILL.md",
+      "sha256": "2a41549ac986bb1771a50a8eab1111ca694a6f1aa7a304ccf8bc4b1143b6b976"
+    },
+    {
+      "path": "claude/skills/hrtech-proto-spec/SKILL.md",
+      "sha256": "da1fa5342db7ac2f4c753d124b57bf1fbfb3873039d7be816d3122090150303b"
+    },
+    {
+      "path": "claude/skills/hrtech-proto-spec/references/kit/MapBoard.module.css",
+      "sha256": "4dba472a7578dfcae19028942375fd1715212ca2f754068f4e0e49975d63e408"
+    },
+    {
+      "path": "claude/skills/hrtech-proto-spec/references/kit/MapBoard.tsx",
+      "sha256": "59cdd5d062ea5e8daeb3cfd5e0c9de1ae1be9f707be3431611a48bb4cfcd7f4f"
+    },
+    {
+      "path": "claude/skills/hrtech-proto-spec/references/kit/README.md",
+      "sha256": "de099ceb6d987b38155fa7619b0909403fd64bad1c72609edebe39fe776ea5d8"
+    },
+    {
+      "path": "claude/skills/hrtech-proto-spec/references/kit/SpecGate.module.css",
+      "sha256": "d8264595e57e3204e83e4dbf96ffcab7ff8b88c04f000d3a6d2b9b4c8a5ff946"
+    },
+    {
+      "path": "claude/skills/hrtech-proto-spec/references/kit/SpecGate.tsx",
+      "sha256": "68ba132a0958f0cf321d9425aa1a131b2bbeeab8a9816e606bd8fd8cdeafee7b"
+    },
+    {
+      "path": "claude/skills/hrtech-proto-spec/references/kit/SpecView.tsx",
+      "sha256": "5c5ea0113d1cb59b9647ffc812cbc9b88fb3be3b9addb6275929f2e6d1bcf040"
+    },
+    {
+      "path": "claude/skills/hrtech-proto-spec/references/kit/examples/spec-live.ts",
+      "sha256": "23101067c0ab6db12d870b7136cbedda764718a8ee42dff61a20378f35264bec"
+    },
+    {
+      "path": "claude/skills/hrtech-proto-spec/references/kit/examples/spec-sections.ts",
+      "sha256": "37e0ca713ef6b348d215cab66473b4b0f28428012e10b0dd7db4c06787617dc3"
+    },
+    {
+      "path": "claude/skills/hrtech-proto-spec/references/kit/examples/spec-seeds.ts",
+      "sha256": "26e7d7426e4bd054fd50553f4681de514889a608b492ec8bc166ed5519f07432"
+    },
+    {
+      "path": "claude/skills/hrtech-proto-spec/references/kit/map-board.ts",
+      "sha256": "fd95dcd17bcd7acd2364e9c29e7e3acfb7df37cb325093569ba4031b3f823e22"
+    },
+    {
+      "path": "claude/skills/hrtech-proto-spec/references/kit/scripts/spec-kit-install.mjs",
+      "sha256": "960b7412cfd7b01d6565a5ba3abdc518305a960b3b78a9c0be29033b1e30ed05"
+    },
+    {
+      "path": "claude/skills/hrtech-proto-spec/references/kit/scripts/spec-lint.mjs",
+      "sha256": "d08b5bf36289aec822794a26876da87f6782f28739145fa67f3831729245b023"
+    },
+    {
+      "path": "claude/skills/hrtech-proto-spec/references/kit/scripts/spec-map-check.mjs",
+      "sha256": "79e59845352a4715637ea4d4fd58b97725dd9f47e9aa5c0c1979166b1c285a2c"
+    },
+    {
+      "path": "claude/skills/hrtech-proto-spec/references/kit/scripts/spec-snapshots.mjs",
+      "sha256": "88ad929413bc2ccd1966e0b1ae4a74f28a4bb3efca9f4f92f488ba27e452b59a"
+    },
+    {
+      "path": "claude/skills/hrtech-proto-spec/references/kit/spec-seed-runtime.ts",
+      "sha256": "cffd1c1fb00da553094f0fc3e5eeaef86d4fd2008362edbebead4bfb75f56435"
+    },
+    {
+      "path": "claude/skills/hrtech-proto-spec/references/kit/spec-snapshots.json",
+      "sha256": "1c780f54a29ee0beb7bcceeda00385415ae38b4583982f81bf55db89a9867322"
+    },
+    {
+      "path": "claude/skills/hrtech-proto-spec/references/kit/spec-snapshots.ts",
+      "sha256": "5c3c40201ff4f006e57c12422d9f88166b42327feeb942c8516e93902283b2f5"
+    },
+    {
+      "path": "claude/skills/hrtech-proto-spec/references/kit/templates/spec-sections.ts",
+      "sha256": "2e54a27574f45dd44acd966f77750bfb5c3d0f491b8edf8ff1c99e6a666c4786"
+    },
+    {
+      "path": "claude/skills/hrtech-proto-spec/references/kit/templates/spec-seeds.ts",
+      "sha256": "2a13450ad1c206d9acf7bfa0680ffc87c0455f326804b7b97aaf8301d771b5a0"
+    },
+    {
+      "path": "claude/skills/hrtech-proto-spec/references/kit/templates/spec.ts",
+      "sha256": "00a2f1314a88f781411104c8c53db09f233aac021837db405d7b658dfa037e22"
+    },
+    {
+      "path": "claude/skills/hrtech-proto-spec/references/kit/url-state.ts",
+      "sha256": "e3ce2994f0ea49bdc8b4477878a6eae200a5282d7dbe7f27833d50da99c4098c"
+    },
+    {
+      "path": "claude/skills/hrtech-proto-spec/references/view-modes.md",
+      "sha256": "d209f7237eaa62e5a8d63336750bbdc1e820d7b4712da28334471069ec6aaeec"
+    },
+    {
+      "path": "claude/skills/hrtech-prototipnitsa/SKILL.md",
+      "sha256": "cb5b71e3974dbc3dd2d6a639a20e94c2cac9c5a5fbb24743f30dc05adafca401"
+    },
+    {
+      "path": "claude/skills/hrtech-spec/SKILL.md",
+      "sha256": "dca48f691f35c77c8fc39fe49fe9923c25b07833b67188712a523ca8d6994849"
+    },
+    {
+      "path": "claude/commands/hrds-knowledge.md",
+      "sha256": "9d5b312708e23240728594df6a294b36cadf02190fe7e9f6c42e740ac8a67bd5"
+    },
+    {
+      "path": "claude/commands/hrtech-digest.md",
+      "sha256": "fca02dc6d6ad32a129d57f5b68d7707c72461fdfa34620b7dfb16e5bf0ae1d6a"
+    },
+    {
+      "path": "claude/commands/hrtech.md",
+      "sha256": "e88f257ff77c06f4a50106ade5424ef6521349edcd6d62adea77f80016f3c7b6"
+    },
+    {
+      "path": "claude/knowledge/team-notes.md",
+      "sha256": "0d7089bccdab6ea76fb2b83c4fb6739f43adc03715962d3dba9a1b6c1a5b05e0"
+    },
+    {
+      "path": "figma-desktop-bridge/code.js",
+      "sha256": "36a2b91e1460ab13a25acc2bbdd4645f337826604d14623f6c30642c4a981eaa"
+    },
+    {
+      "path": "figma-desktop-bridge/manifest.json",
+      "sha256": "9a8d43e82c5ccfaa09990e5227708bac52fea4525e4e34309609e76ce8076fee"
+    },
+    {
+      "path": "figma-desktop-bridge/ui.html",
+      "sha256": "6185700af802d6c1ae9da3352a3ad67ce12dae989ac25ad9815d51933deb7a55"
+    },
+    {
+      "path": "setup.sh",
+      "sha256": "baef4d7fb5e7f1a227daf4fc59987ba93232a5bddb229487094a2b8364efedbb"
+    },
+    {
+      "path": "package.json",
+      "sha256": "d8b255ddbc4ff82c66100cb5341e3f1ef189aa29cf80719c2a3f3273aecb7172"
+    },
+    {
+      "path": "LICENSE",
+      "sha256": "69f4e4b7e5a673c4a82988b3e5df27c088850dd25967ee166a4e0fff54314bd5"
+    }
+  ]
+}

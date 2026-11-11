@@ -22,7 +22,7 @@
     "build:plugin-ui": "node scripts/embed-bulochka-assets.mjs",
     "check:plugin-ui": "node scripts/check-plugin-ui.mjs",
     "start": "wrangler dev",
-    "test": "node --test scripts/bridge.test.mjs",
+    "test": "node --test scripts/bridge.test.mjs scripts/connection.test.mjs scripts/supervisor.test.mjs scripts/update-package.test.mjs scripts/startup.test.mjs scripts/setup.test.mjs scripts/install.test.mjs scripts/claude-desktop.test.mjs scripts/skill-package.test.mjs",
     "test:jest": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
@@ -55,7 +55,7 @@
     "url": "https://github.com/southleft/figma-console-mcp.git"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": "^20.19.0 || ^22.13.0 || >=24.0.0"
   },
   "dependencies": {
     "@cloudflare/puppeteer": "^1.0.4",

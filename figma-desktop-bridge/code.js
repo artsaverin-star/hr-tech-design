@@ -11,7 +11,7 @@ var PLUGIN_VERSION = '1.31.0'; // Kept in sync with package.json by scripts/rele
 console.log('🌉 [Desktop Bridge] Plugin loaded (v' + PLUGIN_VERSION + ')');
 
 // Bulochka is a compact skills companion for the designer's own agent (Codex CLI or Claude Code).
-figma.showUI(__html__, { width: 360, height: 480, visible: true, themeColors: true });
+figma.showUI(__html__, { width: 360, height: 480, visible: true, themeColors: false });
 
 // ============================================================================
 // CONSOLE CAPTURE — Intercept console.* in the QuickJS sandbox and forward
@@ -295,7 +295,7 @@ async function loadFontsForNode(node) {
 // Listen for requests from UI (e.g., component data requests, write operations)
 // HR TECH: built-in bounded scanner — agents MUST use this instead of hand-written walkers.
 // Fast, capped, never freezes the plugin.
-globalThis.hrtechVersion = '4.25';
+globalThis.hrtechVersion = '4.28';
 
 // HR TECH: mechanical content diff — source vs built mobile. Fabricated text = busted.
 globalThis.hrtechDiff = async function (srcId, dstId) {
@@ -3285,7 +3285,7 @@ figma.ui.onmessage = async (msg) => {
       });
       // Short delay to let the response message be sent before reload
       setTimeout(function() {
-        figma.showUI(__html__, { width: 360, height: 480, visible: true, themeColors: true });
+        figma.showUI(__html__, { width: 360, height: 480, visible: true, themeColors: false });
       }, 100);
     } catch (error) {
       var errorMsg = error && error.message ? error.message : String(error);
