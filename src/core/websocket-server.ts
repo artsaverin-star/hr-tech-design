@@ -26,21 +26,32 @@ import { readdirSync } from 'fs';
 /**
  * Установленные скилы — для панели «Настройки» в виджете. Скилы срабатывают сами,
  * поэтому дизайнер не знает ни что они есть, ни какими словами их звать: показываем
- * имя и примеры фраз. Источник — $CODEX_HOME/skills/<name>/SKILL.md (их линкует setup.sh).
+ * имя и примеры фраз. Читаем пользовательские каталоги поддерживаемых помощников;
+ * ~/.agents/skills — текущий каталог Codex, остальные поддержаны для старых установок.
  * Читается один раз на процесс: файлов единицы, но SERVER_HELLO шлётся на каждый коннект.
  */
 let _skillsCache: Array<{ name: string; examples: string[] }> | null = null;
 function readInstalledSkills(): Array<{ name: string; examples: string[] }> {
   if (_skillsCache) return _skillsCache;
   const out: Array<{ name: string; examples: string[] }> = [];
-  try {
-    const root = join(process.env.CODEX_HOME || join(homedir(), '.codex'), 'skills');
-    for (const dir of readdirSync(root)) {
+  const seen = new Set<string>();
+  const roots = [
+    join(homedir(), '.agents', 'skills'),
+    join(process.env.CODEX_HOME || join(homedir(), '.codex'), 'skills'),
+    join(homedir(), '.claude', 'skills'),
+  ];
+  for (const root of roots) {
+    let directories: string[];
+    try { directories = readdirSync(root); } catch { continue; }
+    for (const dir of directories) {
+      if (dir !== 'hrtech' && !dir.startsWith('hrtech-')) continue;
       let md = '';
       try { md = readFileSync(join(root, dir, 'SKILL.md'), 'utf8'); } catch { continue; }
-      const name = (md.match(/^name:\s*(.+)$/m)?.[1] || dir).trim();
+      const name = (md.match(/^name:\s*(.+)$/m)?.[1] || dir).trim().replace(/^['"]|['"]$/g, '');
+      if ((name !== 'hrtech' && !name.startsWith('hrtech-')) || seen.has(name)) continue;
+      seen.add(name);
       // Примеры — буллеты из раздела «## Примеры»; нет раздела — скил покажется без них.
-      const block = md.match(/^##\s*Примеры\s*$([\s\S]*?)(?=^#|\Z)/m)?.[1] || '';
+      const block = md.match(/^##\s*Примеры\s*$([\s\S]*?)(?=^#|(?![\s\S]))/m)?.[1] || '';
       const examples = block
         .split('\n')
         .map((l) => l.trim())
@@ -49,8 +60,6 @@ function readInstalledSkills(): Array<{ name: string; examples: string[] }> {
         .slice(0, 3);
       out.push({ name, examples });
     }
-  } catch {
-    // папки нет (скилы не подключены) — виджет покажет это как подсказку
   }
   _skillsCache = out;
   return out;
@@ -67,13 +76,25 @@ function findLocalAgentBinary(name: 'codex' | 'claude'): string | null {
   const candidates = (process.env.PATH || '').split(delimiter).filter(Boolean).map((dir) => join(dir, name));
   candidates.push(join(home, '.local', 'bin', name));
   if (name === 'codex') {
-    candidates.push('/Applications/ChatGPT.app/Contents/Resources/codex');
+    for (const applications of ['/Applications', join(home, 'Applications')]) {
+      for (const app of ['Codex.app', 'ChatGPT.app']) {
+        candidates.push(join(applications, app, 'Contents', 'Resources', 'codex'));
+      }
+    }
   } else {
     // локальная установка Claude Code (`claude migrate-installer`)
     candidates.push(join(home, '.claude', 'local', 'claude'));
   }
   for (const candidate of candidates) {
     try { accessSync(candidate, fsConstants.X_OK); return candidate; } catch { /* keep looking */ }
+  }
+  return null;
+}
+
+function findLocalClaudeDesktopApp(): string | null {
+  for (const applications of ['/Applications', join(homedir(), 'Applications')]) {
+    const app = join(applications, 'Claude.app');
+    try { accessSync(join(app, 'Contents', 'MacOS', 'Claude'), fsConstants.X_OK); return app; } catch { /* keep looking */ }
   }
   return null;
 }
@@ -92,7 +113,15 @@ try {
 
 // Bulochka feature version — держать в синхроне с globalThis.hrtechVersion в code.js.
 // Плагин сравнивает свою версию с этой; при расхождении показывает кнопку «Починить».
-const HRTECH_VERSION = '4.25';
+const HRTECH_VERSION = '4.28';
+
+function getHrtechDistribution(): 'app' | 'terminal' | 'git' {
+  try {
+    const marker = JSON.parse(readFileSync(join(PACKAGE_ROOT, '.bulochka-install.json'), 'utf8'));
+    if (marker.schemaVersion === 1 && ['app', 'terminal'].includes(marker.distribution)) return marker.distribution;
+  } catch { /* a repository checkout has no installer marker */ }
+  return 'git';
+}
 
 const logger = createChildLogger({ component: 'websocket-server' });
 
@@ -180,6 +209,24 @@ export interface ClientConnection {
 }
 
 export class FigmaWebSocketServer extends EventEmitter {
+  restoreSessionPin(fileKey: string): void {
+    if (!fileKey) return;
+    this._pinnedFileKey = fileKey;
+    this._activeFileKey = fileKey;
+    this._pinSource = 'tool';
+  }
+
+  private mcpClient: { name: string; version: string } | null = null;
+
+  setMcpClient(client: { name: string; version: string } | null): void {
+    this.mcpClient = client;
+    if (!this.wss) return;
+    const message = JSON.stringify({ type: 'HRTECH_MCP_STATUS', data: { client } });
+    for (const ws of this.wss.clients) {
+      if (ws.readyState === WebSocket.OPEN) ws.send(message);
+    }
+  }
+
   private wss: WSServer | null = null;
   private httpServer: HttpServer | null = null;
   /** Named clients indexed by fileKey — each represents a connected Figma file */
@@ -350,6 +397,9 @@ export class FigmaWebSocketServer extends EventEmitter {
                 pid: process.pid,
                 serverVersion: SERVER_VERSION,
                 hrtechVersion: HRTECH_VERSION,
+                bridgeProtocol: 1,
+                mcpClient: this.mcpClient,
+                distribution: getHrtechDistribution(),
                 figmaToken: !!process.env.FIGMA_ACCESS_TOKEN,
                 skills: readInstalledSkills(),
                 startedAt: this._startedAt,
@@ -453,10 +503,19 @@ export class FigmaWebSocketServer extends EventEmitter {
       // кэш умений и досылаем виджету правду: иначе счётчик «Подключено» врал бы до
       // перезапуска помощника, хотя кнопка обещала обновление.
       if (message.type === 'HRTECH_REPAIR') {
+        const distribution = getHrtechDistribution();
         try {
           const script = join(PACKAGE_ROOT, 'scripts', 'repair.sh');
           const child = spawn('bash', [script], { detached: true, stdio: 'ignore' });
-          child.on('error', () => { /* сообщили о старте — отчёт о финале просто не придёт */ });
+          child.on('error', (error) => {
+            try {
+              if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({
+                type: 'HRTECH_REPAIR_RESULT',
+                data: { started: false, finished: true, ok: false, distribution, error: error.message },
+              }));
+            } catch {}
+            logger.error({ error: error.message }, 'HRTECH repair could not start');
+          });
           child.on('exit', (code) => {
             _skillsCache = null;
             const skills = readInstalledSkills();
@@ -464,7 +523,7 @@ export class FigmaWebSocketServer extends EventEmitter {
               if (ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({
                   type: 'HRTECH_REPAIR_RESULT',
-                  data: { started: true, finished: true, ok: code === 0, skills },
+                  data: { started: true, finished: true, ok: code === 0, distribution, skills },
                 }));
               }
             } catch {}
@@ -478,10 +537,10 @@ export class FigmaWebSocketServer extends EventEmitter {
             logger.info({ code, skills: skills.length }, 'HRTECH repair finished');
           });
           child.unref();
-          try { ws.send(JSON.stringify({ type: 'HRTECH_REPAIR_RESULT', data: { started: true } })); } catch {}
+          try { ws.send(JSON.stringify({ type: 'HRTECH_REPAIR_RESULT', data: { started: true, distribution } })); } catch {}
           logger.info({ script }, 'HRTECH repair started');
         } catch (e) {
-          try { ws.send(JSON.stringify({ type: 'HRTECH_REPAIR_RESULT', data: { started: false, error: e instanceof Error ? e.message : String(e) } })); } catch {}
+          try { ws.send(JSON.stringify({ type: 'HRTECH_REPAIR_RESULT', data: { started: false, finished: true, ok: false, distribution, error: e instanceof Error ? e.message : String(e) } })); } catch {}
         }
         return;
       }
@@ -642,12 +701,14 @@ export class FigmaWebSocketServer extends EventEmitter {
   private async collectHrtechHostStatus(): Promise<Record<string, unknown>> {
     const codexBinary = findLocalAgentBinary('codex');
     const claudeBinary = findLocalAgentBinary('claude');
+    const claudeDesktop = findLocalClaudeDesktopApp();
     const installedSkills = readInstalledSkills();
     return {
       platform: process.platform,
+      distribution: getHrtechDistribution(),
       agents: {
         codex: { installed: !!codexBinary },
-        claude: { installed: !!claudeBinary },
+        claude: { installed: !!claudeBinary || !!claudeDesktop, cli: !!claudeBinary, desktop: !!claudeDesktop },
       },
       skills: {
         installed: installedSkills.length,

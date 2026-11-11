@@ -10,8 +10,8 @@
  * suitable for local IDE integrations and development workflows.
  *
  * Requirements:
- * - Desktop Bridge plugin open in Figma (Plugins → Development → Figma Desktop Bridge)
- * - FIGMA_ACCESS_TOKEN environment variable for API access
+ * - Desktop Bridge plugin open in Figma (Plugins → From Yandex → Bulochka)
+ * - Optional FIGMA_ACCESS_TOKEN environment variable for REST API features
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -113,7 +113,7 @@ class LocalFigmaConsoleMCP {
 	private figmaAPI: FigmaAPI | null = null;
 	private desktopConnector: IFigmaConnector | null = null;
 	private wsServer: FigmaWebSocketServer | null = null;
-	private wsStartupError: { code: string; port: number } | null = null;
+	private wsStartupError: { code: string; port: number; message: string } | null = null;
 	/** The port the WebSocket server actually bound to (may differ from preferred if fallback occurred) */
 	private wsActualPort: number | null = null;
 	/** The preferred port requested (from env var or default) */
@@ -268,7 +268,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		const wsPort = this.wsActualPort || this.wsPreferredPort || DEFAULT_WS_PORT;
 		const err = new Error(
 			"Cannot connect to Figma Desktop.\n\n" +
-			"Open the Desktop Bridge plugin in Figma (Plugins → Development → Figma Desktop Bridge).\n" +
+			"Open the Desktop Bridge plugin in Figma (Plugins → From Yandex → Bulochka).\n" +
 			`The plugin will connect automatically to ws://localhost:${wsPort}.\n` +
 			"No special launch flags needed."
 		);
@@ -350,7 +350,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 			canRetry: !isNoClient,
 			recoverySteps: [
 				"Open Figma Desktop with your target file",
-				"Go to Plugins → Development → Figma Desktop Bridge",
+				"Go to Plugins → From Yandex → Bulochka",
 				"Click 'Run' to open the plugin",
 				"Wait 3 seconds, then call figma_get_status with probe:true to verify",
 			],
@@ -391,7 +391,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 			// The user may open the plugin later
 			logger.warn(
 				`WebSocket transport not available yet.\n\n` +
-				`Open the Desktop Bridge plugin in Figma (Plugins → Development → Figma Desktop Bridge).\n` +
+				`Open the Desktop Bridge plugin in Figma (Plugins → From Yandex → Bulochka).\n` +
 				`No special launch flags needed — the plugin connects automatically.`,
 			);
 		}
@@ -1132,14 +1132,15 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 						? undefined
 						: failureLayer === 1
 							? [
-								"Ensure your AI client (Claude Code, Cursor, etc.) is running with figma-console-mcp configured",
-								"Check if all ports 9223-9232 are occupied: lsof -i :9223-9232 | grep LISTEN",
-								"Kill stale processes if needed: pkill -f figma-console-mcp",
-								"Restart your AI client — the MCP server will start automatically on the next tool call",
+								"Inspect transport.websocket.startupError for the actual startup failure",
+								this.wsStartupError?.code === "EADDRINUSE"
+									? "Close unused Codex or Claude sessions to free a bridge port; leave active work running"
+									: "Check FIGMA_WS_HOST and whether the AI client permits local network listeners",
+								"After resolving the startup error, restart the affected AI client session",
 							]
 							: [
 								"Open Figma Desktop with your target file",
-								"Go to Plugins → Development → Figma Desktop Bridge",
+								"Go to Plugins → From Yandex → Bulochka",
 								"Click 'Run' to open the plugin",
 								"Wait 3 seconds for the WebSocket connection to establish",
 								"Call figma_get_status with probe:true to verify the connection",
@@ -1170,7 +1171,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 												startupError: this.wsStartupError ? {
 													code: this.wsStartupError.code,
 													port: this.wsStartupError.port,
-													message: `All ports in range ${this.wsPreferredPort}-${this.wsPreferredPort + 9} are in use`,
+													message: this.wsStartupError.message,
 												} : undefined,
 												otherInstances: (() => {
 													try {
@@ -1225,22 +1226,31 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 													: "✅ Connected to Figma Desktop via WebSocket Bridge"
 												: this.wsStartupError?.code === "EADDRINUSE"
 													? `❌ All WebSocket ports ${this.wsPreferredPort}-${this.wsPreferredPort + 9} are in use`
+													: this.wsStartupError
+													? `❌ WebSocket bridge could not start: ${this.wsStartupError.message}`
 													: this.wsActualPort !== null && this.wsActualPort !== this.wsPreferredPort
 													? `❌ WebSocket server running on port ${this.wsActualPort} (fallback) but no plugin connected. Restart the Desktop Bridge plugin in Figma to reconnect.`
 													: "❌ No connection to Figma Desktop",
 											setupInstructions: !setupValid
 												? this.wsStartupError?.code === "EADDRINUSE"
 													? {
-														cause: `All ports in range ${this.wsPreferredPort}-${this.wsPreferredPort + 9} are in use by other MCP server instances.`,
-														fix: "Close some of the other Claude Desktop tabs or terminal sessions running the MCP server, then restart this one.",
+														cause: `All ports in range ${this.wsPreferredPort}-${this.wsPreferredPort + 9} are occupied.`,
+														fix: "Identify which processes hold these ports. Close unused bridge sessions, then restart the affected AI client session; leave active work running.",
+													}
+													: this.wsStartupError
+													? {
+														cause: this.wsStartupError.message,
+														fix: "Check the configured FIGMA_WS_HOST and local network permissions, then restart the affected AI client session.",
 													}
 													: {
-														instructions: `Open the Desktop Bridge plugin in Figma (Plugins → Development → Figma Desktop Bridge). No special launch flags needed.${this.getPluginPath() ? ' Plugin manifest: ' + this.getPluginPath() : ''}`,
+														instructions: `Open Bulochka in Figma Desktop (Plugins → From Yandex → Bulochka).${this.getPluginPath() ? ' Plugin manifest: ' + this.getPluginPath() : ''}`,
 													}
 												: undefined,
 											ai_instruction: !setupValid
 												? this.wsStartupError?.code === "EADDRINUSE"
-													? `All WebSocket ports in range ${this.wsPreferredPort}-${this.wsPreferredPort + 9} are in use — most likely multiple Claude Desktop tabs or terminal sessions are running the Figma Console MCP server. Ask the user to close some sessions and restart.`
+													? `All WebSocket ports in range ${this.wsPreferredPort}-${this.wsPreferredPort + 9} are occupied. Identify the processes before suggesting which unused sessions to close. Do not terminate active work.`
+													: this.wsStartupError
+														? `The bridge failed to start (${this.wsStartupError.code}): ${this.wsStartupError.message}. Diagnose this startup error before asking the user to reopen the Figma plugin.`
 													: this.wsActualPort !== null && this.wsActualPort !== this.wsPreferredPort
 														? `Server is running on fallback port ${this.wsActualPort} (port ${this.wsPreferredPort} was taken by another instance). The Desktop Bridge plugin is not connected. TELL THE USER: Close and reopen the Desktop Bridge plugin in Figma to reconnect. The plugin scans the whole port range (9223–9232) on launch and will pick up this server automatically.`
 														: `No connection to Figma Desktop. Open the Desktop Bridge plugin in Figma to connect.${this.getPluginPath() ? ' Plugin manifest: ' + this.getPluginPath() : ''}`
@@ -1305,7 +1315,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 					if (transport === "none") {
 						throw new Error(
 							"Cannot connect to Figma Desktop.\n\n" +
-							"Open the Desktop Bridge plugin in Figma (Plugins → Development → Figma Desktop Bridge)."
+							"Open the Desktop Bridge plugin in Figma (Plugins → From Yandex → Bulochka)."
 						);
 					}
 
@@ -3427,12 +3437,21 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 			// Clean up stale/orphaned MCP server instances before trying to bind.
 			// Phase 1: Remove stale port files and terminate zombie processes that have port files
 			cleanupStalePortFiles();
-			// Phase 2: Deep scan for orphaned processes holding ports WITHOUT port files
-			// (e.g., old instances from before port file tracking, or files already cleaned up)
-			cleanupOrphanedProcesses(this.wsPreferredPort);
+			// Bind first. A ten-port lsof scan can exceed the assistant's MCP startup
+			// timeout on a slow Mac; it is only needed when the whole range is occupied.
 
 			const portsToTry = getPortRange(this.wsPreferredPort);
 			let boundPort: number | null = null;
+			let lastBindError: { code: string; port: number; message: string } | null = null;
+			const describeBindError = (error: unknown, port: number) => {
+				const message = error instanceof Error ? error.message : String(error);
+				const code = error instanceof Error ? (error as NodeJS.ErrnoException).code : undefined;
+				return {
+					code: code || (message.includes("EADDRINUSE") ? "EADDRINUSE" : "WS_START_FAILED"),
+					port,
+					message,
+				};
+			};
 
 			for (const port of portsToTry) {
 				try {
@@ -3465,10 +3484,10 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 
 					break;
 				} catch (wsError) {
-					const errorMsg = wsError instanceof Error ? wsError.message : String(wsError);
-					const errorCode = wsError instanceof Error ? (wsError as any).code : undefined;
+					lastBindError = describeBindError(wsError, port);
+					const { message: errorMsg, code: errorCode } = lastBindError;
 
-					if (errorCode === "EADDRINUSE" || errorMsg.includes("EADDRINUSE")) {
+					if (errorCode === "EADDRINUSE") {
 						logger.debug(
 							{ port, error: errorMsg },
 							"Port in use, trying next in range",
@@ -3487,8 +3506,11 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 				}
 			}
 
-			// Phase 3: If all ports exhausted, try evicting the oldest instance and retry ONCE
-			if (!boundPort && evictOldestInstance(this.wsPreferredPort)) {
+			// Scan for orphans only after the fast bind path exhausted the range.
+			const recoveredOrphans = !boundPort && lastBindError?.code === "EADDRINUSE"
+				? cleanupOrphanedProcesses(this.wsPreferredPort) : 0;
+			// Retry once after cleanup, otherwise use the existing guarded eviction.
+			if (!boundPort && lastBindError?.code === "EADDRINUSE" && (recoveredOrphans > 0 || evictOldestInstance(this.wsPreferredPort))) {
 				for (const port of portsToTry) {
 					try {
 						this.wsServer = new FigmaWebSocketServer({ port, host: wsHost });
@@ -3507,7 +3529,8 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 						this.wsHeartbeatTimer.unref();
 						break;
 					} catch (wsError) {
-						const errorCode = wsError instanceof Error ? (wsError as any).code : undefined;
+						lastBindError = describeBindError(wsError, port);
+						const { code: errorCode } = lastBindError;
 						if (errorCode === "EADDRINUSE") {
 							this.wsServer = null;
 							continue;
@@ -3519,15 +3542,19 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 			}
 
 			if (!boundPort) {
-				this.wsStartupError = {
-					code: "EADDRINUSE",
-					port: this.wsPreferredPort,
-				};
 				const rangeEnd = this.wsPreferredPort + portsToTry.length - 1;
+				this.wsStartupError = lastBindError ?? {
+					code: "WS_START_FAILED", port: this.wsPreferredPort, message: "WebSocket bridge did not start",
+				};
+				if (this.wsStartupError.code === "EADDRINUSE") {
+					this.wsStartupError.message = `All ports in range ${this.wsPreferredPort}-${rangeEnd} are in use`;
+				}
 				logger.warn(
-					{ portRange: `${this.wsPreferredPort}-${rangeEnd}` },
-					"All WebSocket ports in range are in use — running without WebSocket transport",
+					{ ...this.wsStartupError, portRange: `${this.wsPreferredPort}-${rangeEnd}` },
+					"WebSocket bridge could not start — running without WebSocket transport",
 				);
+			} else {
+				this.wsStartupError = null;
 			}
 
 			if (this.wsServer) {
@@ -3585,11 +3612,19 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 			logger.info("Checking Figma Desktop accessibility...");
 			await this.checkFigmaDesktop();
 
+			this.wsServer?.restoreSessionPin(process.env.BULOCHKA_SESSION_FILE_KEY || '');
+
 			// Register all tools
 			this.registerTools();
 
 			// Create stdio transport
 			const transport = new StdioServerTransport();
+
+			// Only the completed MCP handshake confirms an assistant, not a listening port.
+			this.server.server.oninitialized = () => {
+				const client = this.server.server.getClientVersion();
+				this.wsServer?.setMcpClient(client ? { name: client.name, version: client.version } : null);
+			};
 
 			// Connect server to transport
 			await this.server.connect(transport);
