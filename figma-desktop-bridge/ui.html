@@ -511,7 +511,7 @@
     .bun-help > summary { font-size:12px; }
     .bun-help ol { padding-left:17px; margin:10px 0; }
     .bun-help li { padding:3px 0; }
-    .bun-help .hrtech-install { width:100%; }
+    .b3-card-note:empty { display:none; }
     .bun-help code { user-select:text; word-break:break-all; }
     .bun-list { padding:0; list-style:none; margin-top:10px; }
     .bun-list li { padding:8px 0; border-bottom:1px solid var(--bun-line); }
@@ -582,34 +582,30 @@
           <h1 class="bun-settings-title">Настройки</h1>
 
           <article class="bun-connection" id="hrtech-conn">
-            <div class="bun-status-heading"><span class="hrtech-lamp" id="hrtech-lamp" aria-hidden="true"></span><h2 id="bun-connection-title">Подключаюсь…</h2></div>
-            <p class="hrtech-conn-msg" id="hrtech-conn-msg" role="status" aria-live="polite">Откройте Codex или Claude Code.</p>
-            <div class="bun-file"><div class="b3-context-file"><span class="bun-file-label">Открытый файл Figma</span><strong id="b3-file-name">Читаю название…</strong><span id="b3-page-name"></span></div></div>
-            <div class="bun-secondary"><button class="bun-text-button" onclick="hrtechShowSetup()">Настроить подключение</button><button class="hrtech-connect" id="hrtech-connect" onclick="hrtechActivate()">Проверить снова</button></div>
+            <div class="bun-status-heading"><span class="hrtech-lamp" id="hrtech-lamp" aria-hidden="true"></span><h2 id="bun-connection-title">Подключение</h2></div>
+            <p class="hrtech-conn-msg" id="hrtech-conn-msg" role="status" aria-live="polite"></p>
+            <div class="bun-file" id="bun-connected-file" hidden><strong id="b3-file-name"></strong><span id="b3-page-name" hidden></span></div>
+            <div class="bun-actions"><button class="hrtech-repair" id="hrtech-repair" onclick="hrtechRepair()">Скопировать команду</button><button class="bun-text-button" id="hrtech-connect" onclick="hrtechActivate()">Проверить связь</button></div>
+            <p class="b3-card-note" id="hrtech-install-note" role="status"></p>
+            <p class="b3-card-note" id="bun-update-note" role="status"></p>
           </article>
-          <details class="bun-details bun-help" id="bun-setup" hidden>
-            <summary>Как подключить</summary>
-            <button class="hrtech-install" id="hrtech-install" onclick="hrtechCopyInstall()">Настроить подключение</button>
-            <p class="b3-card-note" id="hrtech-install-note">Скопируйте команду, вставьте в Терминал и нажмите Enter.</p>
-            <ol><li>Выполните команду в Терминале.</li><li>Откройте новый чат в Codex или новую сессию Claude Code.</li><li>Попросите: «Подключись к Figma через Булочку». Оставьте плагин открытым.</li></ol>
-          </details>
-          <div class="b3-setting-row"><strong>Версия</strong><span><span id="b6-settings-version">v4.28</span><span id="b3-bridge-version"></span></span></div>
-          <div class="b3-setting-row"><strong>Найдены на компьютере</strong><span id="b3-codex-meta">Жду подключения</span></div>
-          <div class="b3-setting-row"><strong>Умения HR Tech</strong><span id="hrtech-skills-count">Жду подключения</span></div>
-          <p class="b3-card-note" id="hrtech-skills-hint"></p>
           <details class="bun-details">
-            <summary>Комментарии и библиотека</summary>
-            <p>Для них нужен личный токен Figma. Макеты можно читать и менять без токена.</p>
-            <div class="b3-setting-row"><strong>Токен Figma</strong><span id="hrtech-token-state">Жду подключения</span></div>
+            <summary>Токен Figma</summary>
+            <p>Для комментариев и опубликованных библиотек.</p>
+            <div class="b3-setting-row"><strong>Токен</strong><span id="hrtech-token-state">Не проверен</span></div>
             <div id="b3-token-edit-slot"></div>
             <button class="b3-btn" id="hrtech-token-edit-btn" onclick="hrtechTokenEdit()" style="margin-top:10px">Добавить токен</button>
             <div class="hrtech-set-msg" id="hrtech-token-msg" role="status"></div>
           </details>
-          <div class="bun-actions"><button class="hrtech-repair" id="hrtech-repair" onclick="hrtechRepair()">Обновить Булочку</button><button class="b3-btn" onclick="hrtechCopyDiagnostics()">Скопировать отчёт</button></div>
-          <p class="b3-card-note" id="bun-update-note" role="status"></p>
-          <button class="bun-text-button" onclick="hrtechShowSetup()" style="margin-top:12px">Помощник не видит Булочку</button>
-          <p class="bun-copy-feedback" id="bun-diagnostics-feedback" role="status"></p>
-          <details class="bun-details"><summary>Для поддержки</summary><p>Журнал содержит команды работы с макетом.</p><button class="b3-btn" onclick="hrtechToggleDiagnostics()" style="margin-top:10px">Открыть журнал</button></details>
+          <details class="bun-details">
+            <summary>Диагностика</summary>
+            <div class="b3-setting-row"><strong>Версия</strong><span><span id="b6-settings-version">v4.29</span><span id="b3-bridge-version"></span></span></div>
+            <div class="b3-setting-row"><strong>Помощники</strong><span id="b3-codex-meta">Нет данных</span></div>
+            <div class="b3-setting-row"><strong>Умения</strong><span id="hrtech-skills-count">Нет данных</span></div>
+            <p class="b3-card-note" id="hrtech-skills-hint"></p>
+            <div class="bun-actions"><button class="b3-btn" onclick="hrtechCopyDiagnostics()">Скопировать отчёт</button><button class="bun-text-button" onclick="hrtechToggleDiagnostics()">Журнал</button></div>
+            <p class="bun-copy-feedback" id="bun-diagnostics-feedback" role="status"></p>
+          </details>
         </section>
       </main>
     </section>
@@ -769,7 +765,7 @@
       var outdated = document.querySelector('.hrtech-app').classList.contains('hrtech-outdated');
       var state = n > 0 ? (outdated ? 'outdated' : (hrtechAssistantNames().length ? 'connected' : 'searching')) : paused ? 'paused' : searching ? 'searching' : 'offline';
       var label = n > 0 ? (outdated ? 'Версии различаются' : (hrtechAssistantNames().length ? hrtechAssistantNames().join(' · ') + ' подключён' : 'Мост Figma доступен')) : paused ? 'На паузе' : searching ? 'Подключаюсь…' : 'Нет подключения';
-      title.textContent = label;
+      title.textContent = 'Подключение';
       document.getElementById('bun-status-label').textContent = label;
       var status = document.getElementById('bun-connection-status');
       status.dataset.state = state;
@@ -778,10 +774,14 @@
       status.title = n > 0 ? 'Связь с мостом Figma. Открыть настройки' : 'Открыть помощь с подключением';
       document.getElementById('hrtech-lamp').classList.toggle('on', n > 0 && !outdated && hrtechAssistantNames().length > 0);
       msg.textContent = n > 0
-        ? (outdated ? 'Нажмите «Обновить и восстановить связь». Мост обновится автоматически.' : (hrtechAssistantNames().length ? 'MCP-подключение: ' + hrtechAssistantNames().join(', ') + '. Доступ к инструментам проверяется в чате помощника.' : 'Figma видит мост, но подключение помощника не подтверждено. Нажмите «Обновить и восстановить связь».'))
-        : (paused ? 'Нажмите «Продолжить поиск», чтобы возобновить подключение.' : 'Откройте Codex или Claude Code и попросите подключиться к Figma через Булочку.');
+        ? (outdated ? 'Нужно обновить мост.' : (hrtechAssistantNames().length ? '' : 'Помощник ещё не подключился.'))
+        : (paused ? 'Поиск приостановлен.' : 'Выполните команду в Терминале один раз.');
+      msg.hidden = !msg.textContent;
+      var fileBlock = document.getElementById('bun-connected-file');
+      if (fileBlock) fileBlock.hidden = n === 0;
+      if (n > 0) document.getElementById('hrtech-install-note').textContent = '';
       retry.hidden = n > 0;
-      retry.textContent = paused ? 'Продолжить поиск' : 'Проверить снова';
+      retry.textContent = paused ? 'Продолжить поиск' : 'Проверить связь';
     }
 
     function hrtechOpenConnection() {
@@ -791,10 +791,7 @@
 
     function hrtechShowSetup() {
       hrtechNavigate('settings');
-      var help = document.getElementById('bun-setup');
-      help.hidden = false;
-      help.open = true;
-      help.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      document.getElementById('hrtech-repair').focus();
     }
     function hrtechCopyText(value) {
       var ta = document.createElement('textarea');
@@ -810,7 +807,7 @@
       var conns = hrtechReadyConnections();
       var report = [
         'Булочка ' + HRTECH_UI_VERSION,
-        'Подтверждённых соединений: ' + conns.length,
+        'Соединения: ' + conns.length,
         'Подключения: ' + (hrtechConnectionVersions() || 'нет'),
         'MCP-клиенты: ' + (hrtechAssistantNames().join(', ') || 'не подтверждены'),
         'Пауза: ' + (typeof window.__wsIsPaused === 'function' && window.__wsIsPaused() ? 'да' : 'нет'),
@@ -819,7 +816,7 @@
       ].join('\n');
       var ok = hrtechCopyText(report);
       var feedback = document.getElementById('bun-diagnostics-feedback');
-      feedback.textContent = ok ? 'Отчёт скопирован. Приложите ошибку из чата помощника.' : report;
+      feedback.textContent = ok ? 'Отчёт скопирован.' : report;
       feedback.style.whiteSpace = 'pre-wrap'; feedback.style.userSelect = 'text';
     }
 
@@ -871,13 +868,13 @@
         var off = hrtechOffline();
         cnt.textContent = off ? 'нет связи' : 'проверяю…';
         cnt.className = 'hrtech-set-state';
-        if (hint) hint.textContent = off ? 'Проверим после подключения.' : '';
+        if (hint) hint.textContent = off ? '' : '';
         return;
       }
       if (!list.length) {
         cnt.textContent = 'ни одного';
         cnt.className = 'hrtech-set-state';
-        if (hint) hint.textContent = window.__hrtechDistribution === 'app' ? 'Умения не найдены. Нажмите «Восстановить связь».' : 'Умения не найдены. Нажмите «Обновить Булочку».';
+        if (hint) hint.textContent = 'Умения не найдены. Нажмите «Обновить».';
         return;
       }
       var tail = list.length % 10, teen = list.length % 100;
@@ -987,7 +984,7 @@
       var note = document.getElementById('hrtech-install-note');
       if (note) {
         note.textContent = ok
-          ? 'Команда скопирована. Откройте Терминал, вставьте (⌘V) и нажмите Enter.'
+          ? 'Скопировано. Вставьте в Терминал и нажмите Enter.'
           : 'Скопировать не вышло. Команда: ' + HRTECH_INSTALL_CMD;
         note.className = 'b3-card-note' + (ok ? ' ok' : ' err');
       }
@@ -995,7 +992,7 @@
     }
 
     // «Обновить»: просим локальный мост подтянуть свежие runtime и skills.
-    var HRTECH_UI_VERSION = '4.28';
+    var HRTECH_UI_VERSION = '4.29';
     (function () {
       var __nodes = [document.getElementById('hrtech-ver-badge'), document.getElementById('b6-settings-version')];
       for (var __i = 0; __i < __nodes.length; __i++) {
@@ -1008,11 +1005,11 @@
       b.disabled = !!window.__hrtechRepairBusy;
       b.textContent = window.__hrtechRepairBusy
         ? ('Обновляю…')
-        : (hrtechReadyConnections().length ? 'Обновить и восстановить связь' : 'Настроить подключение');
+        : (hrtechReadyConnections().length ? 'Обновить' : 'Скопировать команду');
     }
     function hrtechRepair() {
       var live = hrtechReadyConnections()[0];
-      if (!live) { hrtechShowSetup(); hrtechCopyInstall(); return; }
+      if (!live) { hrtechCopyInstall(); return; }
       if (window.__hrtechRepairBusy) return;
       var note = document.getElementById('bun-update-note');
       try {
@@ -1020,7 +1017,7 @@
         window.__hrtechRepairBusy = true;
         hrtechRenderRepair();
         live.ws.send(JSON.stringify({ type: 'HRTECH_REPAIR' }));
-        note.textContent = 'Скачиваю обновление и восстанавливаю подключение.';
+        note.textContent = 'Обновляю…';
         clearTimeout(window.__hrtechRepairTimer);
         window.__hrtechRepairTimer = setTimeout(function() {
           window.__hrtechRepairBusy = false;
@@ -1042,8 +1039,8 @@
       hrtechRenderRepair();
       var note = document.getElementById('bun-update-note');
       if (note) note.textContent = !data || data.ok !== true
-        ? 'Обновление не завершилось. Скопируйте диагностику подключения.'
-        : 'Обновление установлено. Мост восстановит связь автоматически.';
+        ? 'Не удалось обновить. Отчёт — в диагностике.'
+        : 'Обновление установлено.';
     };
 
     // Живая лента: единственный источник — EXECUTE_CODE в code.js (HRTECH_ACTIVITY).
