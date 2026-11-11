@@ -399,3 +399,19 @@ test('connection summary includes every bridge version and only confirmed MCP na
   assert.match(versions, /Codex v4.27 \(порт 9223\)/);
   assert.match(versions, /Мост v4.25 \(порт 9224\)/);
 });
+
+test('published plugin updates an older packaged bridge once, without touching git installs or newer bridges', () => {
+ const start=html.indexOf('    function hrtechVersionOlder('), end=html.indexOf('    function hrtechRenderRepair()',start);
+ const requests=[],window={};let connections=[];
+ const context={window,HRTECH_UI_VERSION:'4.30',hrtechReadyConnections:()=>connections,hrtechRepair:c=>requests.push(c)};
+ vm.createContext(context);vm.runInContext(html.slice(start,end),context);
+ const attempt=()=>vm.runInContext('hrtechAutoUpdate()',context);
+ const connection=(version,distribution='terminal',client={name:'Codex'})=>({serverInfo:{hrtechVersion:version,distribution,bridgeProtocol:1,mcpClient:client}});
+ for(const candidate of [connection('4.30'),connection('4.31'),connection('4.29','git'),connection('4.29','terminal',null)]){connections=[candidate];attempt();}
+ assert.equal(requests.length,0);
+ const eligible=connection('4.29');connections=[eligible];attempt();attempt();
+ assert.equal(requests.length,1);assert.equal(requests[0],eligible);
+ window.__hrtechRepairBusy=true;connections=[connection('4.28')];attempt();assert.equal(requests.length,1);
+ assert.equal(vm.runInContext("hrtechVersionOlder('4.9','4.30')",context),true);
+ assert.equal(vm.runInContext("hrtechVersionOlder('broken','4.30')",context),false);
+});
