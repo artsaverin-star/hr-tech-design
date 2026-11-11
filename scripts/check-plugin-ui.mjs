@@ -13,7 +13,7 @@ const versions = [
   plugin.match(/globalThis\.hrtechVersion = '([^']+)'/)?.[1],
   server.match(/const HRTECH_VERSION = '([^']+)'/)?.[1],
 ];
-if (versions.some(v => v !== '4.29')) throw new Error(`Version mismatch: ${versions.join(', ')}`);
+if (versions.some(v => v !== '4.30')) throw new Error(`Version mismatch: ${versions.join(', ')}`);
 if (Buffer.byteLength(html) > 250 * 1024) throw new Error('Plugin UI exceeds the 250 KiB budget');
 const mascot = readFileSync(new URL('../figma-desktop-bridge/assets/bulochka-pixel-cutout-v1.webp', import.meta.url));
 const embedded = [...html.matchAll(/--bake-cutout:url\("data:image\/webp;base64,([A-Za-z0-9+/=]+)"\)/g)];

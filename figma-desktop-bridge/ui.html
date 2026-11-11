@@ -599,7 +599,7 @@
           </details>
           <details class="bun-details">
             <summary>Диагностика</summary>
-            <div class="b3-setting-row"><strong>Версия</strong><span><span id="b6-settings-version">v4.29</span><span id="b3-bridge-version"></span></span></div>
+            <div class="b3-setting-row"><strong>Версия</strong><span><span id="b6-settings-version">v4.30</span><span id="b3-bridge-version"></span></span></div>
             <div class="b3-setting-row"><strong>Помощники</strong><span id="b3-codex-meta">Нет данных</span></div>
             <div class="b3-setting-row"><strong>Умения</strong><span id="hrtech-skills-count">Нет данных</span></div>
             <p class="b3-card-note" id="hrtech-skills-hint"></p>
@@ -728,6 +728,7 @@
       }
       hrtechConnState(); hrtechTokenState(); hrtechSkills(); hrtechRenderSelectedAgentHost(); hrtechRenderRepair();
       if (current && !current.hostStatus) hrtechRequestHost();
+      hrtechAutoUpdate();
     }
     window.__hrtechConnectionChanged = hrtechSyncBridgeState;
     // Events render immediately; this tick only expires the search grace period.
@@ -992,13 +993,36 @@
     }
 
     // «Обновить»: просим локальный мост подтянуть свежие runtime и skills.
-    var HRTECH_UI_VERSION = '4.29';
+    var HRTECH_UI_VERSION = '4.30';
     (function () {
       var __nodes = [document.getElementById('hrtech-ver-badge'), document.getElementById('b6-settings-version')];
       for (var __i = 0; __i < __nodes.length; __i++) {
         if (__nodes[__i]) __nodes[__i].textContent = 'v' + HRTECH_UI_VERSION;
       }
     })();
+    function hrtechVersionOlder(installed, available) {
+      if (!/^\d+\.\d+(?:\.\d+)?$/.test(installed || '') || !/^\d+\.\d+(?:\.\d+)?$/.test(available || '')) return false;
+      var a = installed.split('.').map(Number), b = available.split('.').map(Number);
+      for (var i = 0; i < 3; i++) {
+        if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) < (b[i] || 0);
+      }
+      return false;
+    }
+    function hrtechAutoUpdate() {
+      if (window.__hrtechRepairBusy) return;
+      var live = hrtechReadyConnections().find(function(c) {
+        var info = c.serverInfo;
+        return info.bridgeProtocol === 1 && info.mcpClient &&
+          (info.distribution === 'terminal' || info.distribution === 'app') &&
+          hrtechVersionOlder(info.hrtechVersion, HRTECH_UI_VERSION);
+      });
+      if (!live) return;
+      var key = live.serverInfo.hrtechVersion + '>' + HRTECH_UI_VERSION;
+      var attempts = window.__hrtechAutoUpdateAttempts || (window.__hrtechAutoUpdateAttempts = {});
+      if (attempts[key]) return;
+      attempts[key] = true;
+      hrtechRepair(live);
+    }
     function hrtechRenderRepair() {
       var b = document.getElementById('hrtech-repair');
       if (!b) return;
@@ -1007,8 +1031,8 @@
         ? ('Обновляю…')
         : (hrtechReadyConnections().length ? 'Обновить' : 'Скопировать команду');
     }
-    function hrtechRepair() {
-      var live = hrtechReadyConnections()[0];
+    function hrtechRepair(targetConnection) {
+      var live = targetConnection || hrtechReadyConnections()[0];
       if (!live) { hrtechCopyInstall(); return; }
       if (window.__hrtechRepairBusy) return;
       var note = document.getElementById('bun-update-note');
