@@ -66,7 +66,7 @@ function clientHarness({ constructorThrows = false, onSocket, sendPluginCommand 
       changes.push(window.__wsGetActiveConnections().filter(c => c.ws.readyState === 1 && c.fileRegistered).length);
     },
   };
-  vm.runInNewContext(clientSource, {
+  const context = vm.createContext({
     window,
     WebSocket: Socket,
     console: { log() {}, error() {} },
@@ -74,7 +74,8 @@ function clientHarness({ constructorThrows = false, onSocket, sendPluginCommand 
     clearTimeout(timer) { if (timer) timer.canceled = true; },
     setInterval(fn, delay) { intervals.push(fn); return schedule(fn, delay, true); },
   });
-  return { window, sockets, timers, intervals, changes, advance };
+  vm.runInContext(clientSource, context);
+  return { window, sockets, timers, intervals, changes, advance, context };
 }
 
 function finishScan(sockets, livePorts = [9223]) {
@@ -89,6 +90,229 @@ function confirmFile(socket, data = {}) {
   socket.message({ type: 'SERVER_HELLO', data: { hrtechVersion: '4.30', fileRegistrationAck: true, ...data } });
   socket.message({ type: 'FILE_REGISTERED', data: { fileKey: 'test-file' } });
 }
+
+// Read real top-level product functions without evaluating unrelated DOM setup.
+// Parsing statements avoids copying their implementation into a test fixture.
+const productScripts = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)]
+  .map((match, index) => ts.createSourceFile(`plugin-${index}.js`, match[1], ts.ScriptTarget.ESNext, true, ts.ScriptKind.JS));
+function productStatement(name) {
+  for (const script of productScripts) {
+    for (const statement of script.statements) {
+      if (ts.isFunctionDeclaration(statement) && statement.name?.text === name) return statement.getText(script);
+      if (ts.isExpressionStatement(statement) && ts.isBinaryExpression(statement.expression)
+        && statement.expression.left.getText(script) === name) return statement.getText(script);
+    }
+  }
+  assert.fail(`Missing production statement: ${name}`);
+}
+
+function repairHarness(options = {}) {
+  const h = clientHarness(options);
+  const nodes = new Map();
+  function element(key) {
+    if (!nodes.has(key)) {
+      const classes = new Set();
+      nodes.set(key, { textContent: '', hidden: false, disabled: false, dataset: {}, style: {},
+        classList: {
+          toggle(name, value) { if (value) classes.add(name); else classes.delete(name); },
+          contains(name) { return classes.has(name); },
+        },
+      });
+    }
+    return nodes.get(key);
+  }
+  let copied = 0;
+  Object.assign(h.context, {
+    document: { getElementById: element, querySelector: element }, HRTECH_UI_VERSION: '4.32',
+    hrtechCopyInstall() { copied++; },
+    hrtechTokenState() {}, hrtechSkills() {}, hrtechRenderSelectedAgentHost() {}, hrtechRequestHost() {}, hrtechAutoUpdate() {},
+  });
+  for (const name of ['hrtechReadyConnections', 'hrtechLegacyBridge', 'hrtechPrimaryConnection',
+    'hrtechAssistantNames', 'hrtechConnectionVersions', 'hrtechConnState', 'hrtechRenderRepair',
+    'hrtechSyncBridgeState', 'hrtechRepair', 'window.__hrtechRepairResult']) {
+    vm.runInContext(productStatement(name), h.context);
+  }
+  h.window.__hrtechConnectionChanged = () => h.context.hrtechSyncBridgeState();
+  return { ...h, element, copied: () => copied,
+    repair: target => h.context.hrtechRepair(target),
+    note: () => element('bun-update-note').textContent,
+  };
+}
+
+async function settleClient() {
+  // Flush nested RPC/refresh callbacks and the product result continuation.
+  for (let i = 0; i < 6; i++) await Promise.resolve();
+}
+
+function helloLegacy(socket, overrides = {}) {
+  socket.message({ type: 'SERVER_HELLO', data: { hrtechVersion: '4.27', ...overrides } });
+}
+
+test('legacy compatibility is limited to bridge 4.27 without a newer protocol and does not need client identity', () => {
+  const h = repairHarness();
+  const legacy = info => h.context.hrtechLegacyBridge({ serverInfo: info });
+  assert.equal(legacy({ hrtechVersion: '4.27' }), true);
+  assert.equal(legacy({ hrtechVersion: '4.27', mcpClient: null }), true);
+  assert.equal(legacy({ hrtechVersion: '4.27', mcpClient: { name: 'Codex' } }), true);
+  for (const info of [{}, { hrtechVersion: '4.26' }, { hrtechVersion: '4.28' },
+    { hrtechVersion: '4.32' }, { hrtechVersion: '4.27', bridgeProtocol: 1 }]) assert.equal(legacy(info), false);
+  assert.equal(h.context.hrtechLegacyBridge(null), false);
+});
+
+test('legacy HELLO and proactive local identification show availability without claiming an assistant or live probe', async () => {
+  const h = repairHarness();
+  finishScan(h.sockets.slice());
+  await settleClient();
+  const socket = h.sockets[0];
+  assert.ok(socket.sent.some(message => message.type === 'FILE_INFO'));
+  helloLegacy(socket);
+  await settleClient();
+  const conn = h.window.__wsGetActiveConnections()[0];
+  assert.equal(!!conn.legacyFileVerified, false);
+  assert.equal(!!conn.fileRegistered, false);
+  assert.equal(h.element('bun-connection-status').dataset.state, 'searching');
+  assert.equal(h.element('bun-status-label').textContent, 'Мост 4.27 доступен');
+  assert.equal(h.element('hrtech-repair').textContent, 'Починить');
+  assert.equal(h.context.hrtechAssistantNames().length, 0);
+});
+
+test('only a successful GET_FILE_INFO RPC on its legacy socket establishes file verification', async () => {
+  const h = repairHarness();
+  finishScan(h.sockets.slice(), [9223, 9224]);
+  await settleClient();
+  const [a, b] = h.sockets;
+  helloLegacy(a); helloLegacy(b);
+  a.message({ type: 'GET_FILE_INFO_RESULT', success: true, fileInfo: { fileKey: 'test-file' } });
+  a.message({ method: 'GET_FILE_INFO', params: {} }); // no RPC id
+  await settleClient();
+  assert.ok(h.window.__wsGetActiveConnections().every(c => !c.legacyFileVerified));
+  a.message({ id: 'read-only-probe', method: 'GET_FILE_INFO', params: {} });
+  await settleClient();
+  const conns = h.window.__wsGetActiveConnections();
+  assert.equal(conns.find(c => c.ws === a).legacyFileVerified, true);
+  assert.equal(!!conns.find(c => c.ws === b).legacyFileVerified, false);
+  assert.equal(a.sent.find(message => message.id === 'read-only-probe').result.fileInfo.fileKey, 'test-file');
+  assert.equal(h.element('bun-connection-status').dataset.state, 'connected');
+  assert.equal(h.context.hrtechAssistantNames().length, 0, 'legacy probe must not invent a client name');
+  a.close();
+  assert.equal(h.element('bun-connection-status').dataset.state, 'searching', 'another unverified legacy socket cannot inherit the proof');
+});
+
+test('failed, mismatched, unidentified and modern socket probes cannot set legacy verification', async () => {
+  for (const scenario of ['failed', 'mismatch', 'missing-file', 'unidentified', 'modern', 'rejected']) {
+    let probe = false;
+    const h = clientHarness({ sendPluginCommand() {
+      if (!probe) return Promise.resolve({ success: true, fileInfo: { fileKey: 'test-file' } });
+      if (scenario === 'rejected') return Promise.reject(new Error('Read failed'));
+      if (scenario === 'failed') return Promise.resolve({ success: false, fileInfo: { fileKey: 'test-file' } });
+      if (scenario === 'missing-file') return Promise.resolve({ success: true });
+      return Promise.resolve({ success: true, fileInfo: { fileKey: scenario === 'mismatch' ? 'other-file' : 'test-file' } });
+    } });
+    finishScan(h.sockets.slice());
+    await settleClient();
+    const socket = h.sockets[0];
+    if (scenario !== 'unidentified') helloLegacy(socket, scenario === 'modern' ? { bridgeProtocol: 1 } : {});
+    probe = true;
+    socket.message({ id: 'probe', method: 'GET_FILE_INFO', params: {} });
+    await settleClient();
+    assert.equal(!!h.window.__wsGetActiveConnections()[0].legacyFileVerified, false, scenario);
+  }
+});
+
+test('repair targets the primary verified connection and does not broadcast or require legacy identity', async () => {
+  const h = repairHarness();
+  finishScan(h.sockets.slice(), [9223, 9224]);
+  await settleClient();
+  const [a, b] = h.sockets;
+  helloLegacy(a); helloLegacy(b);
+  b.message({ id: 'probe-b', method: 'GET_FILE_INFO', params: {} });
+  await settleClient();
+  h.repair(); h.repair();
+  assert.equal(h.window.__hrtechRepairSocket, b);
+  assert.equal(b.sent.filter(message => message.type === 'HRTECH_REPAIR').length, 1);
+  assert.equal(a.sent.filter(message => message.type === 'HRTECH_REPAIR').length, 0);
+  assert.equal(h.window.__hrtechRepairBusy, true);
+  assert.equal(h.copied(), 0);
+});
+
+test('repair without an identified connection offers the command and never sends repair to an unknown listener', async () => {
+  const h = repairHarness();
+  finishScan(h.sockets.slice());
+  await settleClient();
+  h.repair();
+  assert.equal(h.copied(), 1);
+  assert.equal(h.sockets[0].sent.filter(message => message.type === 'HRTECH_REPAIR').length, 0);
+  h.window.__hrtechRepairResult({ finished: true, ok: true }, h.sockets[0]);
+  assert.equal(h.note(), '', 'unsolicited success from an unidentified listener is ignored');
+});
+
+test('successful legacy repair refreshes only the initiating socket and waits for file identification', async () => {
+  let pending;
+  let requests = 0;
+  const h = repairHarness({ sendPluginCommand() {
+    requests++;
+    if (requests <= 2) return Promise.resolve({ success: true, fileInfo: { fileKey: 'test-file' } });
+    return new Promise(resolve => { pending = resolve; });
+  } });
+  finishScan(h.sockets.slice(), [9223, 9224]);
+  await settleClient();
+  const [a, b] = h.sockets;
+  helloLegacy(a); helloLegacy(b);
+  const target = h.window.__wsGetActiveConnections().find(c => c.ws === b);
+  h.repair(target);
+  h.window.__hrtechRepairResult({ finished: true, ok: true }, a);
+  h.window.__hrtechRepairResult({ started: true }, b);
+  assert.equal(requests, 2, 'wrong-socket and progress replies do not refresh');
+  const beforeA = a.sent.filter(message => message.type === 'FILE_INFO').length;
+  const beforeB = b.sent.filter(message => message.type === 'FILE_INFO').length;
+  const done = h.window.__hrtechRepairResult({ finished: true, ok: true }, b);
+  assert.equal(typeof done?.then, 'function');
+  assert.equal(h.window.__hrtechRepairBusy, true);
+  assert.notEqual(h.note(), 'Настройки восстановлены.', 'script exit alone is not file identification');
+  pending({ success: true, fileInfo: { fileKey: 'test-file' } });
+  await done;
+  assert.equal(h.note(), 'Настройки восстановлены.');
+  assert.equal(h.window.__hrtechRepairBusy, false);
+  assert.equal(h.window.__hrtechRepairSocket, null);
+  assert.equal(a.sent.filter(message => message.type === 'FILE_INFO').length, beforeA);
+  assert.equal(b.sent.filter(message => message.type === 'FILE_INFO').length, beforeB + 1);
+  assert.equal(!!target.legacyFileVerified, false, 'local refresh does not fabricate an assistant probe');
+});
+
+test('failed repair or failed file refresh never reports success even when another bridge remains live', async () => {
+  for (const scenario of ['script-failed', 'file-unidentified', 'read-rejected']) {
+    let calls = 0;
+    const h = repairHarness({ sendPluginCommand() {
+      calls++;
+      if (calls <= 2) return Promise.resolve({ success: true, fileInfo: { fileKey: 'test-file' } });
+      return scenario === 'read-rejected' ? Promise.reject(new Error('Plugin timed out')) : Promise.resolve({ success: true });
+    } });
+    finishScan(h.sockets.slice(), [9223, 9224]);
+    await settleClient();
+    const [legacy, modern] = h.sockets;
+    helloLegacy(legacy);
+    confirmFile(modern, { hrtechVersion: '4.32', bridgeProtocol: 1, mcpClient: { name: 'Codex' } });
+    h.repair(h.window.__wsGetActiveConnections().find(c => c.ws === legacy));
+    await h.window.__hrtechRepairResult({ finished: true, ok: scenario !== 'script-failed' }, legacy);
+    await settleClient();
+    assert.match(h.note(), /Не удалось/, `${scenario}: unrelated live bridges cannot turn repair failure into success`);
+    assert.equal(h.window.__hrtechRepairBusy, false, scenario);
+    assert.equal(modern.readyState, 1, 'another assistant session is preserved');
+    if (scenario === 'script-failed') assert.equal(calls, 2, 'failed script does not initiate a refresh');
+  }
+});
+
+test('file refresh reports false for absent or disconnected sockets without invoking the plugin worker', async () => {
+  let calls = 0;
+  const h = clientHarness({ sendPluginCommand() { calls++; return Promise.resolve({ success: true, fileInfo: { fileKey: 'test-file' } }); } });
+  assert.equal(await h.window.__wsRefreshFile({ readyState: 1 }), false);
+  assert.equal(calls, 0);
+  finishScan(h.sockets.slice());
+  await settleClient();
+  h.sockets[0].close();
+  assert.equal(await h.window.__wsRefreshFile(h.sockets[0]), false);
+  assert.equal(calls, 1);
+});
 
 test('all live MCP sessions connect, including one starting after the initial scan', () => {
   const h = clientHarness();
