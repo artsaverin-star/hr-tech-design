@@ -4,6 +4,10 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import path from 'node:path';
+import vm from 'node:vm';
+import { EventEmitter } from 'node:events';
+import ts from 'typescript';
 
 const setupSource = fs.readFileSync(new URL('../setup.sh', import.meta.url), 'utf8');
 const installSource = fs.readFileSync(new URL('../install.sh', import.meta.url), 'utf8');
@@ -140,4 +144,213 @@ test('the shared protocol no longer carries the queue playbook', () => {
     ]) {
         assert.match(hrtechCommandSource, kept, `hrtech.md lost ${kept}`);
     }
+});
+
+// Execute the shipped TypeScript implementation with a controlled filesystem,
+// sockets and timers. The check must never launch a device process or write data.
+const skillHelpers = ts.transpileModule(
+    websocketServerSource.slice(websocketServerSource.indexOf('let _skillsCache:'), websocketServerSource.indexOf("import { createChildLogger }")),
+    { compilerOptions: { target: ts.ScriptTarget.ES2022 } },
+).outputText;
+const bridgeClass = ts.transpileModule(
+    websocketServerSource.slice(websocketServerSource.indexOf('export class FigmaWebSocketServer')).replace('export class', 'class'),
+    { compilerOptions: { target: ts.ScriptTarget.ES2022 } },
+).outputText;
+const searchSkill = '---\nname: hrtech-figma-search\n---\n# Find a Figma design\nUse the local catalog.\n';
+const codexSkill = '/designer/.agents/skills/hrtech-figma-search/SKILL.md';
+const claudeSkill = '/designer/.claude/skills/hrtech-figma-search/SKILL.md';
+
+function connectionCheckHarness({ files = {}, env = {} } = {}) {
+    const reads = [], timers = [];
+    let websocketServer;
+    class FakeWSS extends EventEmitter {
+        constructor() { super(); this.clients = new Set(); websocketServer = this; }
+        address() { return { port: 9223 }; }
+    }
+    const forbidden = () => assert.fail('Read-only connection check attempted a device command or filesystem write');
+    const context = vm.createContext({
+        EventEmitter, WSServer: FakeWSS, WebSocket: { OPEN: 1, CONNECTING: 0 },
+        createHttpServer() {
+            const http = new EventEmitter();
+            http.listen = (_port, _host, done) => done();
+            return http;
+        },
+        logger: { info() {}, warn() {}, debug() {}, error() {} },
+        process: { env, pid: 123, platform: 'darwin' },
+        homedir: () => '/designer', join: path.join, delimiter: path.delimiter,
+        readFileSync(file) { reads.push(file); if (!(file in files)) throw new Error('unreadable'); return files[file]; },
+        readdirSync(root) { return [...new Set(Object.keys(files).filter(file => file.startsWith(root + '/')).map(file => file.slice(root.length + 1).split('/')[0]))]; },
+        accessSync() { throw new Error('not executable'); }, fsConstants: { X_OK: 1 },
+        mkdirSync: forbidden, writeFileSync: forbidden, spawn: forbidden,
+        SERVER_VERSION: 'fixture', HRTECH_VERSION: websocketServerSource.match(/const HRTECH_VERSION = '([^']+)'/)[1],
+        getHrtechDistribution: () => 'terminal',
+        setTimeout(fn, delay) { const timer = { fn, delay, canceled: false }; timers.push(timer); return timer; },
+        clearTimeout(timer) { if (timer) timer.canceled = true; }, setInterval() { return {}; }, clearInterval() {},
+    });
+    vm.runInContext(skillHelpers + '\n' + bridgeClass, context);
+    const server = vm.runInContext('new FigmaWebSocketServer({port: 9223})', context);
+    function socket() {
+        const ws = new EventEmitter();
+        ws.readyState = 1; ws.sent = [];
+        ws.send = message => ws.sent.push(JSON.parse(message));
+        ws.close = () => { ws.readyState = 3; };
+        return ws;
+    }
+    function register(key, ws = socket()) {
+        server.handleMessage({ type: 'FILE_INFO', data: { fileKey: key, fileName: 'Fixture file' } }, ws);
+        ws.sent.length = 0;
+        return ws;
+    }
+    return { server, socket, register, files, reads, timers, context,
+        wire: () => websocketServer,
+        available: name => context.isFigmaSearchSkillAvailable(name === null ? null : { name, version: 'fixture' }),
+        request(ws, requestId, extra = {}) { server.handleMessage({ type: 'HRTECH_CHECK_CONNECTION', requestId, ...extra }, ws); },
+        response(ws, rpc, fileKey, extra = {}) { server.handleMessage({ id: rpc.id, result: { success: true, fileInfo: { fileKey }, ...extra } }, ws); },
+    };
+}
+const checkResults = ws => ws.sent.filter(message => message.type === 'HRTECH_CONNECTION_CHECK_RESULT').map(message => message.data);
+async function settleCheck() { for (let i = 0; i < 4; i++) await Promise.resolve(); }
+
+test('HELLO advertises the read-only connection check independently from MCP identity', async () => {
+    const h = connectionCheckHarness();
+    await h.server.start();
+    const socket = h.socket();
+    h.wire().clients.add(socket);
+    h.wire().emit('connection', socket);
+    const hello = socket.sent.find(message => message.type === 'SERVER_HELLO').data;
+    assert.equal(hello.hrtechVersion, '4.33');
+    assert.equal(hello.repairCheck, true);
+    assert.equal(hello.fileRegistrationAck, true);
+    assert.equal(hello.bridgeProtocol, 1);
+    assert.equal(hello.mcpClient, null);
+});
+
+test('connection check probes only its registered caller and preserves active file and session pin', async () => {
+    const h = connectionCheckHarness({ files: { [codexSkill]: searchSkill } });
+    const a = h.register('A'), b = h.register('B');
+    h.server.setMcpClient({ name: 'codex-mcp-client', version: '1' });
+    h.server.pinFile('B');
+    h.request(a, 'caller-a', { fileKey: 'B', method: 'DELETE_NODE', code: 'forbidden input' });
+    const rpc = a.sent.find(message => message.method);
+    assert.equal(rpc.method, 'GET_FILE_INFO');
+    assert.deepEqual(rpc.params, {});
+    assert.equal(b.sent.length, 0);
+    assert.equal(h.server._activeFileKey, 'B');
+    assert.equal(h.server._pinnedFileKey, 'B');
+    h.response(a, rpc, 'A', { text: 'private content must not escape', path: '/private/fixture' });
+    await settleCheck();
+    assert.deepEqual(checkResults(a), [{ requestId: 'caller-a', fileKey: 'A', fileOk: true,
+        client: { name: 'codex-mcp-client', version: '1' }, skillAvailable: true }]);
+    assert.equal(b.sent.length, 0);
+    assert.equal(h.server._activeFileKey, 'B');
+    assert.equal(h.server._pinnedFileKey, 'B');
+});
+
+test('unregistered, closed and malformed check requests never start an RPC', async () => {
+    const h = connectionCheckHarness();
+    const pending = h.socket();
+    h.request(pending, 'pending');
+    assert.equal(pending.sent.length, 0);
+    const live = h.register('A');
+    for (const requestId of [undefined, null, 0, {}, '', 'x'.repeat(129)]) h.request(live, requestId);
+    assert.equal(live.sent.length, 0);
+    live.readyState = 3;
+    h.request(live, 'closed');
+    await settleCheck();
+    assert.equal(live.sent.length, 0);
+    assert.equal(h.server.pendingRequests.size, 0);
+});
+
+test('file check validates file identity and reports worker failures without leaking errors or creating client identity', async () => {
+    for (const scenario of ['mismatch', 'worker-failed', 'missing-file', 'error', 'timeout', 'success']) {
+        const h = connectionCheckHarness({ files: { [codexSkill]: searchSkill, [claudeSkill]: searchSkill } });
+        const ws = h.register('A');
+        h.request(ws, scenario);
+        const rpc = ws.sent.find(message => message.method);
+        if (scenario === 'timeout') h.timers.find(timer => timer.delay === 3000 && !timer.canceled).fn();
+        else if (scenario === 'error') h.server.handleMessage({ id: rpc.id, error: '/private/path: worker error' }, ws);
+        else if (scenario === 'missing-file') h.server.handleMessage({ id: rpc.id, result: { success: true } }, ws);
+        else h.response(ws, rpc, scenario === 'mismatch' ? 'B' : 'A', { success: scenario !== 'worker-failed' });
+        await settleCheck();
+        assert.deepEqual(checkResults(ws), [{ requestId: scenario, fileKey: 'A', fileOk: scenario === 'success', client: null, skillAvailable: false }]);
+        assert.equal(h.server.mcpClient, null);
+    }
+});
+
+test('concurrent file checks correlate out-of-order results and reject responses from another socket', async () => {
+    const h = connectionCheckHarness();
+    const a = h.register('A'), b = h.register('B');
+    h.request(a, 'first'); h.request(a, 'second'); h.request(b, 'third');
+    const [first, second] = a.sent.filter(message => message.method);
+    const third = b.sent.find(message => message.method);
+    h.response(b, first, 'A');
+    await settleCheck();
+    assert.equal(checkResults(a).length, 0, 'another socket cannot complete this RPC');
+    assert.equal(h.server.pendingRequests.size, 3);
+    h.response(a, second, 'A'); h.response(b, third, 'B'); h.response(a, first, 'A');
+    await settleCheck();
+    assert.deepEqual(checkResults(a).map(result => result.requestId), ['second', 'first']);
+    assert.deepEqual(checkResults(b).map(result => result.requestId), ['third']);
+    assert.ok([...checkResults(a), ...checkResults(b)].every(result => result.fileOk));
+    assert.equal(h.server.pendingRequests.size, 0);
+});
+
+test('replacement, re-registration and disconnect cannot deliver stale check results to a different caller', async () => {
+    for (const scenario of ['replacement', 'different-file', 'disconnect']) {
+        const h = connectionCheckHarness();
+        const old = h.register('A');
+        h.request(old, 'old-request');
+        const rpc = old.sent.find(message => message.method);
+        let replacement;
+        if (scenario === 'replacement') replacement = h.register('A');
+        if (scenario === 'different-file') h.register('B', old);
+        if (scenario === 'disconnect') old.readyState = 3;
+        if (scenario === 'disconnect') h.timers.find(timer => timer.delay === 3000 && !timer.canceled).fn();
+        else h.response(old, rpc, 'A');
+        await settleCheck();
+        assert.deepEqual(checkResults(old), [], scenario);
+        if (replacement) assert.deepEqual(checkResults(replacement), [], 'no old result is sent to the new socket');
+    }
+});
+
+test('skill availability is fresh and scoped to actual Codex and Claude Code paths', () => {
+    const h = connectionCheckHarness({ files: { [codexSkill]: searchSkill } });
+    for (const name of ['Codex', 'codex-mcp-client', 'codex_cli_rs', 'Codex CLI', 'Codex Desktop']) assert.equal(h.available(name), true, name);
+    for (const name of ['Claude Code', 'claude-code', 'ClaudeCode']) assert.equal(h.available(name), false, name + ' cannot borrow Codex skills');
+    h.files[claudeSkill] = searchSkill;
+    for (const name of ['Claude Code', 'claude-code', 'ClaudeCode']) assert.equal(h.available(name), true, name);
+    for (const name of [null, 'Claude', 'claude-ai', 'Claude Desktop', 'Unknown', 'Codex Claude Code', 'not-codex']) assert.equal(h.available(name), false, String(name));
+    delete h.files[codexSkill];
+    assert.equal(h.available('codex-mcp-client'), false, 'availability is not cached from a previous check');
+    assert.equal(h.available('claude-code'), true);
+});
+
+test('custom assistant roots and real readable skill frontmatter are respected', () => {
+    const customCodex = '/custom/codex/skills/hrtech-figma-search/SKILL.md';
+    const customClaude = '/custom/claude/skills/hrtech-figma-search/SKILL.md';
+    const h = connectionCheckHarness({ env: { CODEX_HOME: '/custom/codex', CLAUDE_CONFIG_DIR: '/custom/claude' },
+        files: { [customCodex]: searchSkill, [claudeSkill]: searchSkill } });
+    assert.equal(h.available('codex-mcp-client'), true);
+    assert.equal(h.available('claude-code'), false, 'custom Claude profile must not borrow the standard profile');
+    h.files[customClaude] = searchSkill;
+    assert.equal(h.available('claude-code'), true);
+    for (const invalid of ['', '# Wrong file', '---\nname: another-skill\n---\nInstructions', '---\nname: hrtech-figma-search\n---\n']) {
+        h.files[customClaude] = invalid;
+        assert.equal(h.available('claude-code'), false);
+    }
+    delete h.files[customClaude];
+    assert.equal(h.available('claude-code'), false);
+});
+
+test('check reports current handshake identity after a concurrent MCP change, without inventing skill support', async () => {
+    const h = connectionCheckHarness({ files: { [codexSkill]: searchSkill } });
+    const ws = h.register('A');
+    h.server.setMcpClient({ name: 'codex-mcp-client', version: '1' });
+    h.request(ws, 'identity-change');
+    const rpc = ws.sent.find(message => message.method);
+    h.server.setMcpClient({ name: 'claude-ai', version: '2' });
+    h.response(ws, rpc, 'A');
+    await settleCheck();
+    assert.deepEqual(checkResults(ws)[0], { requestId: 'identity-change', fileKey: 'A', fileOk: true,
+        client: { name: 'claude-ai', version: '2' }, skillAvailable: false });
 });

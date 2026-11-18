@@ -600,7 +600,7 @@
           </details>
           <details class="bun-details">
             <summary>Диагностика</summary>
-            <div class="b3-setting-row"><strong>Версия</strong><span><span id="b6-settings-version">v4.32</span><span id="b3-bridge-version"></span></span></div>
+            <div class="b3-setting-row"><strong>Версия</strong><span><span id="b6-settings-version">v4.33</span><span id="b3-bridge-version"></span></span></div>
             <div class="b3-setting-row"><strong>Помощники</strong><span id="b3-codex-meta">Нет данных</span></div>
             <div class="b3-setting-row"><strong>Умения</strong><span id="hrtech-skills-count">Нет данных</span></div>
             <p class="b3-card-note" id="hrtech-skills-hint"></p>
@@ -707,6 +707,7 @@
     function hrtechPrimaryConnection(connections) {
       return connections.find(function(c) { return c.fileRegistered && c.serverInfo.mcpClient; })
         || connections.find(function(c) { return c.legacyFileVerified; })
+        || connections.find(function(c) { return c.legacyReady; })
         || connections[0];
     }
     function hrtechSyncBridgeState() {
@@ -730,11 +731,10 @@
       }
       var bv = document.getElementById('b3-bridge-version');
       if (bv) bv.textContent = window.__hrtechBridgeVersion ? ' · ' + hrtechConnectionVersions() : '';
-      if (window.__hrtechRepairSocket && !conns.some(function(c) { return c.ws === window.__hrtechRepairSocket; })) {
-        clearTimeout(window.__hrtechRepairTimer);
-        window.__hrtechRepairSocket = null;
-        window.__hrtechRepairBusy = false;
-        document.getElementById('bun-update-note').textContent = 'Соединение с мостом прервалось. Проверяю связь…';
+      hrtechMaintainRepair(conns);
+      if (window.__hrtechOutcomeSocket && !conns.some(function(c) { return c.ws === window.__hrtechOutcomeSocket; })) {
+        window.__hrtechOutcomeSocket = null;
+        if (!window.__hrtechRepairBusy) document.getElementById('bun-update-note').textContent = 'Соединение прервано. Результат нужно проверить заново.';
       }
       hrtechConnState(); hrtechTokenState(); hrtechSkills(); hrtechRenderSelectedAgentHost(); hrtechRenderRepair();
       if (current && !current.hostStatus) hrtechRequestHost();
@@ -771,7 +771,7 @@
       var primary = hrtechPrimaryConnection(hrtechReadyConnections());
       var legacy = hrtechLegacyBridge(primary);
       var verified = legacy && primary.legacyFileVerified;
-      var registered = hrtechReadyConnections().some(function(c) { return c.fileRegistered; }) || verified;
+      var registered = hrtechReadyConnections().some(function(c) { return c.fileRegistered; }) || verified || legacy && primary.legacyReady;
       var hasMcp = hrtechReadyConnections().some(function(c) { return c.serverInfo.mcpClient; });
       var title = document.getElementById('bun-connection-title');
       var msg = document.getElementById('hrtech-conn-msg');
@@ -782,8 +782,8 @@
       var state = n > 0 ? (outdated ? 'outdated' : (hrtechAssistantNames().length ? 'connected' : 'searching')) : paused ? 'paused' : searching ? 'searching' : 'offline';
       var label = n > 0 ? (outdated ? 'Версии различаются' : (hrtechAssistantNames().length ? hrtechAssistantNames().join(' · ') + ' подключён' : hasMcp ? 'Определяю файл…' : 'Мост Figma доступен')) : paused ? 'На паузе' : searching ? 'Подключаюсь…' : 'Нет подключения';
       if (legacy) {
-        state = verified ? 'connected' : 'searching';
-        label = verified ? 'Связь с файлом подтверждена' : 'Мост 4.27 доступен';
+        state = verified || primary.legacyReady ? 'connected' : 'searching';
+        label = verified ? 'Связь с файлом подтверждена' : primary.legacyReady ? 'Мост готов к работе' : 'Мост 4.27 доступен';
       }
       title.textContent = 'Подключение';
       document.getElementById('bun-status-label').textContent = label;
@@ -801,7 +801,7 @@
       var fileBlock = document.getElementById('bun-connected-file');
       if (fileBlock) fileBlock.hidden = !registered;
       if (n > 0) document.getElementById('hrtech-install-note').textContent = '';
-      retry.hidden = registered || legacy;
+      retry.hidden = n > 0;
       retry.textContent = paused ? 'Продолжить поиск' : 'Проверить связь';
     }
 
@@ -831,7 +831,11 @@
         'Соединения: ' + conns.length,
         'Подключения: ' + (hrtechConnectionVersions() || 'нет'),
         'MCP-клиенты: ' + (hrtechAssistantNames().join(', ') || (conns.some(hrtechLegacyBridge) ? 'мост 4.27 не передаёт имя' : 'не подтверждены')),
-        'Обмен с файлом: ' + (conns.some(function(c) { return c.legacyFileVerified || c.fileRegistered && c.serverInfo.mcpClient; }) ? 'подтверждён' : 'ожидает подтверждения'),
+        'Обмен с файлом: ' + (conns.some(hrtechFileExchangeConfirmed) ? 'подтверждён' : conns.some(function(c) { return c.legacyReady; }) ? 'Файл передан мосту. Запроса помощника ещё не было.' : 'ожидает подтверждения'),
+        'Установка: ' + (conns.map(function(c) { return 'порт ' + c.port + ': ' + hrtechDistribution(c); }).join(', ') || 'нет данных'),
+        'Поиск hrtech-figma-search: ' + (conns.map(function(c) { return 'порт ' + c.port + ': ' + (hrtechHasSearchSkill(c) === null ? 'не подтверждён' : hrtechHasSearchSkill(c) ? 'найден' : 'не подтверждён для клиента'); }).join(', ') || 'нет данных'),
+        'Восстановление: ' + (conns.map(function(c) { return 'порт ' + c.port + ': ' + (c.repairOutcome || 'не запускалось'); }).join(', ') || 'нет соединения'),
+        'Проверка: ' + (conns.map(function(c) { return 'порт ' + c.port + ': ' + (c.checkOutcome || 'не выполнена'); }).join(', ') || 'нет соединения'),
         'Пауза: ' + (typeof window.__wsIsPaused === 'function' && window.__wsIsPaused() ? 'да' : 'нет'),
         'Найдены помощники: ' + (hrtechFoundAgents().join(', ') || 'не определено'),
         'Умения HR Tech: ' + (window.__hrtechSkills ? window.__hrtechSkills.map(function(s) { return s.name; }).join(', ') : 'не получены')
@@ -1014,7 +1018,7 @@
     }
 
     // «Обновить»: просим локальный мост подтянуть свежие runtime и skills.
-    var HRTECH_UI_VERSION = '4.32';
+    var HRTECH_UI_VERSION = '4.33';
     (function () {
       var __nodes = [document.getElementById('hrtech-ver-badge'), document.getElementById('b6-settings-version')];
       for (var __i = 0; __i < __nodes.length; __i++) {
@@ -1033,7 +1037,7 @@
       if (window.__hrtechRepairBusy) return;
       var live = hrtechReadyConnections().find(function(c) {
         var info = c.serverInfo;
-        return info.bridgeProtocol === 1 && info.mcpClient &&
+        return c.fileKey && info.bridgeProtocol === 1 && info.mcpClient &&
           (info.distribution === 'terminal' || info.distribution === 'app') &&
           hrtechVersionOlder(info.hrtechVersion, HRTECH_UI_VERSION);
       });
@@ -1044,57 +1048,203 @@
       attempts[key] = true;
       hrtechRepair(live);
     }
+    function hrtechDistribution(connection) {
+      return connection && ((connection.hostStatus && connection.hostStatus.distribution) || connection.serverInfo.distribution) || 'не определена';
+    }
+    function hrtechFileExchangeConfirmed(connection) {
+      if (connection.connectionCheck) return connection.connectionCheck.fileOk && !!connection.connectionCheck.client;
+      return !!connection.legacyFileVerified || !connection.serverInfo.repairCheck && connection.fileRegistered && !!connection.serverInfo.mcpClient;
+    }
+    function hrtechHasSearchSkill(connection) {
+      if (!connection) return null;
+      if (connection.connectionCheck) return connection.connectionCheck.client ? connection.connectionCheck.skillAvailable : null;
+      var skills = connection.serverInfo.skills;
+      return Array.isArray(skills) ? skills.some(function(skill) { return skill.name === 'hrtech-figma-search'; }) : null;
+    }
+    function hrtechFinishRepair(operation, text) {
+      if (window.__hrtechRepairOperation !== operation) return;
+      clearTimeout(window.__hrtechRepairTimer);
+      clearTimeout(operation.recheckTimer);
+      var pending = operation.connection.checkRequest;
+      if (pending && pending.operation === operation) {
+        clearTimeout(pending.timer); operation.connection.checkRequest = null;
+      }
+      window.__hrtechRepairOperation = null;
+      window.__hrtechRepairSocket = null;
+      window.__hrtechRepairBusy = false;
+      window.__hrtechOutcomeSocket = operation.socket;
+      document.getElementById('bun-update-note').textContent = text;
+      hrtechRenderRepair();
+    }
+    function hrtechCheckConnection(connection, operation) {
+      if (!connection.serverInfo.repairCheck || !connection.fileRegistered || !connection.fileKey || connection.checkRequest) return;
+      var identity = JSON.stringify(connection.serverInfo.mcpClient || null);
+      if (!operation && connection.checkedIdentity === identity) return;
+      connection.checkedIdentity = identity;
+      var requestId = 'bulochka-check-' + (window.__hrtechCheckSequence = (window.__hrtechCheckSequence || 0) + 1);
+      var request = { requestId: requestId, fileKey: connection.fileKey, operation: operation };
+      connection.checkRequest = request;
+      connection.checkOutcome = 'Проверяю файл, помощника и поиск';
+      request.timer = setTimeout(function() {
+        if (connection.checkRequest !== request) return;
+        connection.checkRequest = null;
+        connection.connectionCheck = { fileOk: false, client: null, skillAvailable: false };
+        connection.checkOutcome = 'Мост не ответил на проверку';
+        if (operation) hrtechFinishRepair(operation, 'Мост не ответил на проверку. Нажмите «Починить» ещё раз.');
+        else hrtechRenderRepair();
+      }, 10000);
+      try { connection.ws.send(JSON.stringify({ type: 'HRTECH_CHECK_CONNECTION', requestId: requestId })); }
+      catch (e) {
+        clearTimeout(request.timer); connection.checkRequest = null;
+        connection.connectionCheck = { fileOk: false, client: null, skillAvailable: false };
+        connection.checkOutcome = 'Не удалось отправить проверку';
+        if (operation) hrtechFinishRepair(operation, 'Связь прервалась во время проверки.');
+      }
+    }
+    window.__hrtechConnectionCheckResult = function(data, socket) {
+      var connection = hrtechReadyConnections().find(function(c) { return c.ws === socket; });
+      var request = connection && connection.checkRequest;
+      if (!request || !data || data.requestId !== request.requestId) return;
+      clearTimeout(request.timer); connection.checkRequest = null;
+      var sameFile = data.fileKey === request.fileKey && connection.fileKey === request.fileKey;
+      var client = data.client && typeof data.client.name === 'string' && data.client.name ? data.client : null;
+      if (sameFile) {
+        connection.serverInfo.mcpClient = client;
+        connection.checkedIdentity = JSON.stringify(client);
+      }
+      connection.connectionCheck = { fileOk: sameFile && data.fileOk === true, client: client, skillAvailable: data.skillAvailable === true };
+      var result = connection.connectionCheck;
+      var text = !result.fileOk ? 'Связь с этим файлом не подтверждена.'
+        : !client ? 'Подключение помощника не подтверждено.'
+        : !result.skillAvailable ? 'Не удалось подтвердить умение поиска для ' + client.name + '.'
+        : 'Связь с файлом подтверждена. Умение поиска установлено.';
+      connection.checkOutcome = text;
+      var operation = request.operation;
+      if (operation && window.__hrtechRepairOperation === operation && operation.handover && result.fileOk && (!client || !result.skillAvailable)) {
+        // The new engine may start before repair.sh has finished linking skills.
+        // Only this bounded repair operation retries; passive checks never poll.
+        operation.phase = 'retry';
+        document.getElementById('bun-update-note').textContent = !client ? 'Файл доступен. Жду подключения помощника…' : 'Файл доступен. Проверяю установку поиска…';
+        operation.recheckTimer = setTimeout(function() {
+          if (window.__hrtechRepairOperation !== operation || operation.socket !== socket) return;
+          operation.phase = 'check';
+          hrtechCheckConnection(connection, operation);
+        }, 1500);
+      } else if (operation) hrtechFinishRepair(operation, text);
+      hrtechRenderRepair();
+    };
+    function hrtechMaintainRepair(connections) {
+      var operation = window.__hrtechRepairOperation;
+      if (!operation) {
+        connections.forEach(function(c) { hrtechCheckConnection(c); });
+        return;
+      }
+      var current = connections.find(function(c) { return c.ws === operation.socket; });
+      if (!current) {
+        clearTimeout(operation.recheckTimer);
+        if (operation.connection.checkRequest) {
+          clearTimeout(operation.connection.checkRequest.timer);
+          operation.connection.checkRequest = null;
+        }
+        operation.phase = 'reconnect';
+        document.getElementById('bun-update-note').textContent = 'Жду мост после восстановления…';
+        current = connections.find(function(c) {
+          return operation.previousSockets.indexOf(c.ws) === -1 && c.port === operation.port &&
+            c.fileKey === operation.fileKey && c.fileRegistered &&
+            (!operation.clientName || c.serverInfo.mcpClient && c.serverInfo.mcpClient.name === operation.clientName);
+        });
+        if (!current) return;
+        operation.socket = current.ws; operation.connection = current;
+        operation.handover = true;
+        window.__hrtechRepairSocket = current.ws;
+        current.repairOutcome = 'Соединение сменилось. Результат скрипта не получен';
+        operation.phase = 'check';
+      }
+      if (operation.phase === 'check') {
+        document.getElementById('bun-update-note').textContent = 'Проверяю файл, помощника и поиск…';
+        if (current.serverInfo.repairCheck) hrtechCheckConnection(current, operation);
+        else if (current.fileRegistered) hrtechFinishRepair(operation, 'Мост подключён. Проверка поиска в этой версии недоступна.');
+      }
+    }
     function hrtechRenderRepair() {
       var b = document.getElementById('hrtech-repair');
       if (!b) return;
       var connection = hrtechPrimaryConnection(hrtechReadyConnections());
-      var repair = connection && (hrtechLegacyBridge(connection) || !connection.serverInfo.mcpClient);
+      var repair = connection && (hrtechLegacyBridge(connection) || !connection.serverInfo.mcpClient || hrtechHasSearchSkill(connection) !== true || connection.connectionCheck && !connection.connectionCheck.fileOk);
       b.disabled = !!window.__hrtechRepairBusy;
-      if (!connection) b.textContent = 'Скопировать команду';
+      if (!connection) b.textContent = b.disabled ? 'Восстанавливаю…' : 'Скопировать команду';
       else if (repair) b.textContent = b.disabled ? 'Восстанавливаю…' : 'Починить';
-      else b.textContent = b.disabled ? 'Обновляю…' : 'Обновить';
+      else b.textContent = b.disabled ? 'Проверяю…' : 'Обновить';
     }
     function hrtechRepair(targetConnection) {
       var live = targetConnection || hrtechPrimaryConnection(hrtechReadyConnections());
       if (!live) { hrtechCopyInstall(); return; }
       if (window.__hrtechRepairBusy) return;
-      var note = document.getElementById('bun-update-note');
-      try {
-        window.__hrtechRepairSocket = live.ws;
-        window.__hrtechRepairBusy = true;
-        hrtechRenderRepair();
-        live.ws.send(JSON.stringify({ type: 'HRTECH_REPAIR' }));
-        note.textContent = hrtechLegacyBridge(live) ? 'Восстанавливаю подключение…' : 'Обновляю…';
-        clearTimeout(window.__hrtechRepairTimer);
-        window.__hrtechRepairTimer = setTimeout(function() {
-          window.__hrtechRepairSocket = null;
-          window.__hrtechRepairBusy = false;
-          hrtechRenderRepair();
-          note.textContent = 'Мост не подтвердил результат. Проверьте соединение и повторите попытку.';
-        }, 90000);
-      } catch (e) {
-        window.__hrtechRepairBusy = false;
-        hrtechRenderRepair();
-        note.textContent = 'Связь прервалась. Попробуйте подключиться снова.';
+      if (!live.fileKey) {
+        document.getElementById('bun-update-note').textContent = 'Файл ещё не определён. Дождитесь подключения.';
+        return;
       }
+      if (live.checkRequest) { clearTimeout(live.checkRequest.timer); live.checkRequest = null; }
+      live.connectionCheck = null; live.checkOutcome = 'Ожидает восстановления';
+      var operation = { socket: live.ws, connection: live, port: live.port, fileKey: live.fileKey,
+        clientName: live.serverInfo.mcpClient && live.serverInfo.mcpClient.name,
+        previousSockets: hrtechReadyConnections().map(function(c) { return c.ws; }), phase: 'repair' };
+      window.__hrtechRepairOperation = operation;
+      window.__hrtechRepairSocket = live.ws;
+      window.__hrtechRepairBusy = true;
+      window.__hrtechOutcomeSocket = null;
+      live.repairOutcome = 'Восстановление выполняется';
+      hrtechRenderRepair();
+      document.getElementById('bun-update-note').textContent = 'Восстанавливаю подключение и поиск…';
+      window.__hrtechRepairTimer = setTimeout(function() {
+        if (window.__hrtechRepairOperation !== operation) return;
+        if (operation.phase === 'repair') operation.connection.repairOutcome = 'Результат восстановления не подтверждён';
+        var reason = operation.phase === 'reconnect' ? 'Мост не подключился снова.'
+          : operation.phase === 'handover' ? 'Новая версия моста не подключилась.'
+          : operation.connection.checkOutcome && operation.phase !== 'repair' ? operation.connection.checkOutcome
+          : 'Мост не подтвердил завершение восстановления.';
+        hrtechFinishRepair(operation, 'Восстановление не подтверждено. ' + reason);
+      }, 90000);
+      try { live.ws.send(JSON.stringify({ type: 'HRTECH_REPAIR' })); }
+      catch (e) { hrtechFinishRepair(operation, 'Не удалось отправить запрос мосту.'); }
     }
     window.__hrtechRepairResult = function(data, socket) {
+      var operation = window.__hrtechRepairOperation;
       var conn = hrtechReadyConnections().find(function(c) { return c.ws === socket; });
-      if (!conn || socket !== window.__hrtechRepairSocket || !data || !data.finished) return;
-      clearTimeout(window.__hrtechRepairTimer);
-      var note = document.getElementById('bun-update-note');
-      function finish(text) {
-        if (socket !== window.__hrtechRepairSocket) return;
-        window.__hrtechRepairSocket = null;
-        window.__hrtechRepairBusy = false;
-        hrtechRenderRepair();
-        note.textContent = text;
+      if (!operation || operation.phase !== 'repair' || !conn || socket !== operation.socket || !data || !data.finished) return;
+      if (Array.isArray(data.skills)) conn.serverInfo.skills = data.skills;
+      if (data.distribution) conn.serverInfo.distribution = data.distribution;
+      if (data.ok !== true) {
+        conn.repairOutcome = 'Скрипт восстановления завершился с ошибкой';
+        hrtechFinishRepair(operation, 'Не удалось восстановить настройки. Подробности — в диагностике.'); return;
       }
-      if (!data.ok) { finish('Не удалось восстановить подключение. Скопируйте отчёт в диагностике.'); return; }
-      if (!hrtechLegacyBridge(conn)) { finish('Настройки обновлены.'); return; }
+      conn.repairOutcome = 'Настройки восстановлены';
       conn.legacyFileVerified = false;
+      conn.legacyReady = false;
+      if (conn.serverInfo.fileRegistrationAck) conn.fileRegistered = false;
+      operation.phase = 'register';
       return window.__wsRefreshFile(socket).then(function(sent) {
-        finish(sent ? 'Настройки восстановлены.' : 'Не удалось подключить файл. Откройте Булочку в нём снова.');
+        if (window.__hrtechRepairOperation !== operation || operation.socket !== socket || operation.phase !== 'register') return;
+        if (!sent) { hrtechFinishRepair(operation, 'Не удалось подключить файл. Откройте Булочку в нём снова.'); return; }
+        if (conn.serverInfo.repairCheck) {
+          operation.phase = 'check'; hrtechMaintainRepair(hrtechReadyConnections()); return;
+        }
+        var distribution = hrtechDistribution(conn);
+        if (conn.serverInfo.bridgeProtocol === 1 && (distribution === 'app' || distribution === 'terminal') &&
+            hrtechVersionOlder(conn.serverInfo.hrtechVersion, HRTECH_UI_VERSION)) {
+          operation.phase = 'handover';
+          document.getElementById('bun-update-note').textContent = 'Жду обновлённый мост для проверки…';
+          return;
+        }
+        var skill = hrtechHasSearchSkill(conn);
+        conn.legacyReady = skill === true && hrtechLegacyBridge(conn) && distribution === 'git';
+        var text = skill === true ? 'Мост отвечает. Умение поиска установлено.'
+          : skill === false && hrtechLegacyBridge(conn) && hrtechDistribution(conn) === 'app'
+            ? 'Настройки восстановлены. В пакете 4.27 нет умения поиска. Эта кнопка не обновляет пакет.'
+            : skill === false ? 'Настройки восстановлены, но умение поиска не найдено.'
+            : 'Настройки восстановлены. Наличие умения поиска не подтверждено.';
+        hrtechFinishRepair(operation, text);
+        if (window.__hrtechConnectionChanged) window.__hrtechConnectionChanged();
       });
     };
 
@@ -1868,6 +2018,8 @@
         activeConnections = activeConnections.filter(function(c) {
           if (c.ws !== socket) return true;
           clearTimeout(c.handshakeTimer);
+          if (c.checkRequest) { clearTimeout(c.checkRequest.timer); c.checkRequest = null; }
+          c.connectionCheck = null; c.checkOutcome = null; c.repairOutcome = null;
           return false;
         });
         updateCompatState();
@@ -2150,6 +2302,11 @@
             }
 
 
+            if (message.type === 'HRTECH_CONNECTION_CHECK_RESULT' && message.data) {
+              if (window.__hrtechConnectionCheckResult) window.__hrtechConnectionCheckResult(message.data, activeWs);
+              return;
+            }
+
             if (message.type === 'HRTECH_MCP_STATUS' && message.data && source.serverInfo) {
               source.serverInfo.mcpClient = message.data.client || null;
               if (typeof window.__hrtechConnectionChanged === 'function') window.__hrtechConnectionChanged();
@@ -2190,6 +2347,17 @@
                       source.fileKey && result.fileInfo && result.fileInfo.fileKey === source.fileKey) {
                     source.legacyFileVerified = true;
                     if (window.__hrtechConnectionChanged) window.__hrtechConnectionChanged();
+                  }
+                  if (info && info.hrtechVersion === '4.27' && !info.bridgeProtocol &&
+                      message.method === 'EXECUTE_CODE' && result && result.success === true && source.fileKey) {
+                    // Verify an already completed assistant RPC, never execute new code.
+                    var expectedFile = source.fileKey;
+                    window.sendPluginCommand('GET_FILE_INFO', {}).then(function(current) {
+                      if (activeWs.readyState !== 1 || activeConnections.indexOf(source) === -1 || source.fileKey !== expectedFile) return;
+                      if (!current || current.success === false || !current.fileInfo || current.fileInfo.fileKey !== expectedFile) return;
+                      source.legacyFileVerified = true;
+                      if (window.__hrtechConnectionChanged) window.__hrtechConnectionChanged();
+                    }).catch(function() {});
                   }
                 }
               })
