@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "version": "4.31",
+  "version": "4.32",
   "files": [
     {
       "path": "runtime/bin/bridge.mjs",
@@ -8,7 +8,7 @@
     },
     {
       "path": "runtime/bin/engine.mjs",
-      "sha256": "fbd3183a7030bcc10fd9b5e528098afe02b13c43c1f0463e3a542bd6a2174353"
+      "sha256": "f0ca1d78a2120e58e278f336e376d457c3a6bbef6bf0487769c12ebd0a62938d"
     },
     {
       "path": "runtime/bin/supervisor.mjs",
@@ -216,7 +216,7 @@
     },
     {
       "path": "figma-desktop-bridge/code.js",
-      "sha256": "038fac9dea465529b2b7934c5294f4c883d3741706f30821c779c49b8c71516a"
+      "sha256": "6bada4ddba7ed51105c3b48db888e01db586e9b6fc8b3dc8c8f693c6354133bf"
     },
     {
       "path": "figma-desktop-bridge/manifest.json",
@@ -224,7 +224,7 @@
     },
     {
       "path": "figma-desktop-bridge/ui.html",
-      "sha256": "7fafb6a0ce3b1bc6feecb5ce7ac6bf6f0885b78bc6913bfbf1d4a62b835ff71b"
+      "sha256": "0735cae7b55ca83f38cca3e3a6d6258500a4241e144eda6a44e0b234ba1dd2a2"
     },
     {
       "path": "setup.sh",
@@ -232,7 +232,7 @@
     },
     {
       "path": "package.json",
-      "sha256": "1673ce0f8f94c7cffc8c832a278230460efc7e081e2293e8eab2bb2ad2396fcd"
+      "sha256": "fafa1aaa0a67d4bdc91bda9d3e0e2e9f69e091f478dc2d6294d36b702b1414bd"
     },
     {
       "path": "LICENSE",
