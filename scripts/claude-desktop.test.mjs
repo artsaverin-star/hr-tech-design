@@ -146,6 +146,30 @@ test('custom configuration locations are rejected rather than silently writing t
   assert.equal(fs.existsSync(f.userFile), false);
 });
 
+test('standalone CLI updates an explicit profile without touching default or legacy configurations', t => {
+  const f = fixture(t);
+  const configDir = path.join(f.home, '.claude');
+  const customFile = path.join(configDir, '.claude.json');
+  f.write(f.userFile, { defaultAccount: 'keep' });
+  f.write(customFile, { customAccount: 'keep', mcpServers: { unrelated: { command: '/other' }, 'figma-hrtech': { command: '/old' } } });
+  fs.mkdirSync(path.dirname(f.legacyFile), { recursive: true });
+  fs.writeFileSync(f.legacyFile, '{invalid legacy config is unrelated to standalone CLI');
+  const defaultBefore = fs.readFileSync(f.userFile, 'utf8');
+  const legacyBefore = fs.readFileSync(f.legacyFile, 'utf8');
+  configureClaudeDesktop({ ...f.options, client: 'cli', configDir });
+  assert.equal(f.read(customFile).customAccount, 'keep');
+  assert.equal(f.read(customFile).mcpServers.unrelated.command, '/other');
+  assert.equal(f.read(customFile).mcpServers['figma-hrtech'].command, process.execPath);
+  assert.equal(fs.readFileSync(f.userFile, 'utf8'), defaultBefore);
+  assert.equal(fs.readFileSync(f.legacyFile, 'utf8'), legacyBefore);
+});
+
+test('desktop does not confuse an explicit ~/.claude profile with the default ~/.claude.json', t => {
+  const f = fixture(t);
+  assert.throws(() => configureClaudeDesktop({ ...f.options, configDir: path.join(f.home, '.claude') }), /CLAUDE_CONFIG_DIR/);
+  assert.equal(fs.existsSync(f.userFile), false);
+});
+
 test('symlinked configuration is preserved and reported as unsupported', t => {
   const f = fixture(t);
   const target = path.join(f.root, 'original.json');

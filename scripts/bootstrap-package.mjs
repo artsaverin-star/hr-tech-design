@@ -13,13 +13,21 @@ function markerAt(target) {
 }
 export function bootstrapPackage(source,target,nodeRoot) {
   const manifest=validatePackage(source);
-  if(fs.existsSync(target)) {
+  const fresh=!fs.existsSync(target);
+  if(!fresh) {
     if(fs.lstatSync(target).isSymbolicLink() || !fs.lstatSync(target).isDirectory())throw new Error('Место установки занято другим файлом или ссылкой.');
     try { markerAt(target); } catch { throw new Error('В выбранной папке находится другой проект. Его файлы сохранены.'); }
+  } else {
+    fs.mkdirSync(path.dirname(target),{recursive:true});
+    // Claim only a directory we created; do not adopt a concurrent installation.
+    fs.mkdirSync(target);
   }
-  fs.mkdirSync(target,{recursive:true});
-  const release=acquireUpdateLock(target);
+  let release;
   try {
+    // Claim ownership before the first runtime/payload write. A failed or
+    // interrupted first install can then be repaired by the same command.
+    if(fresh)writeMarker(target,{schemaVersion:1,distribution:'terminal',version:manifest.version,configurationStatus:'incomplete'});
+    release=acquireUpdateLock(target);
     const nodeTarget=path.join(target,'runtime/node');
     for(const relative of ['runtime','runtime/node','runtime/node/bin']) {
       const directory=path.join(target,relative);
@@ -30,17 +38,26 @@ export function bootstrapPackage(source,target,nodeRoot) {
       if(fs.existsSync(executable) && (!fs.lstatSync(executable).isFile() || fs.lstatSync(executable).isSymbolicLink()))throw new Error('Движок заменён посторонней ссылкой.');
       fs.mkdirSync(path.dirname(executable),{recursive:true});
       const temp=executable+'.'+randomUUID();
-      fs.copyFileSync(path.join(nodeRoot,'bin/node'),temp);fs.chmodSync(temp,0o755);fs.renameSync(temp,executable);
+      try {fs.copyFileSync(path.join(nodeRoot,'bin/node'),temp);fs.chmodSync(temp,0o755);fs.renameSync(temp,executable);}
+      finally {fs.rmSync(temp,{force:true});}
       fs.copyFileSync(path.join(nodeRoot,'LICENSE'),path.join(nodeTarget,'LICENSE'));
     } else if(fs.lstatSync(executable).isSymbolicLink() || !fs.lstatSync(executable).isFile())throw new Error('Движок заменён посторонней ссылкой.');
     const version=applyPackage(source,target);
     writeMarker(target,{schemaVersion:1,distribution:'terminal',version,configurationStatus:'incomplete'});
     return version;
-  } finally {release();}
+  } finally {
+    release?.();
+    // If even the ownership marker could not be saved, only remove an empty
+    // directory created by this call. Never sweep another process's files.
+    if(fresh && !fs.existsSync(path.join(target,'.bulochka-install.json'))) {
+      try {fs.rmdirSync(target);} catch {}
+    }
+  }
 }
 function writeMarker(target,data) {
   const file=path.join(target,'.bulochka-install.json'),temporary=file+'.'+randomUUID();
-  fs.writeFileSync(temporary,JSON.stringify(data)+'\n',{mode:0o600});fs.renameSync(temporary,file);
+  try {fs.writeFileSync(temporary,JSON.stringify(data)+'\n',{mode:0o600});fs.renameSync(temporary,file);}
+  finally {fs.rmSync(temporary,{force:true});}
 }
 if(process.argv[1] && fs.realpathSync(process.argv[1])===fileURLToPath(import.meta.url)) {
   try {

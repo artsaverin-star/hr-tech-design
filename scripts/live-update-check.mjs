@@ -23,11 +23,15 @@ const reconnectTimers=new Set();
 function connect(fileKey) {
  if(stopped)return;
  const ws=new WebSocket('ws://localhost:19583');sockets.add(ws);
+ let serverInfo;
  ws.on('error',()=>{});
  ws.on('open',()=>ws.send(JSON.stringify({type:'FILE_INFO',data:{fileKey,fileName:fileKey,currentPage:'Test'}})));
  ws.on('message',raw=>{
   const m=JSON.parse(raw);
-  if(m.type==='SERVER_HELLO')hellos.push(m.data);
+  if(m.type==='SERVER_HELLO'){serverInfo=m.data;hellos.push(serverInfo);}
+  // The socket can reconnect before MCP initialization completes. Match the
+  // plugin's per-socket identity update rather than treating HELLO as readiness.
+  if(m.type==='HRTECH_MCP_STATUS'&&serverInfo)serverInfo.mcpClient=m.data?.client||null;
   if(m.id&&m.method)ws.send(JSON.stringify({id:m.id,result:{success:true,value:'ok'}}));
  });
  ws.on('close',()=>{sockets.delete(ws);if(!stopped){const timer=setTimeout(()=>{reconnectTimers.delete(timer);connect(fileKey);},100);reconnectTimers.add(timer);}});
@@ -47,7 +51,8 @@ try {
  await until(async()=>data(await call('figma_list_open_files')).totalFiles===2);
  const files=data(await call('figma_list_open_files'));
  assert.equal(files.pinnedFileKey,'A');assert.equal(files.activeFileKey,'A');
- const newHello=hellos.find(h=>h.pid!==oldPid);
+ await until(()=>hellos.some(h=>h.pid!==oldPid&&h.mcpClient?.name==='Codex update acceptance'));
+ const newHello=hellos.find(h=>h.pid!==oldPid&&h.mcpClient?.name==='Codex update acceptance');
  assert.equal(newHello.mcpClient.name,'Codex update acceptance');
  console.log(JSON.stringify({passed:true,tools:tools.tools.length,enginePidChanged:true,mcpClientUnchanged:true,files:files.totalFiles,pinPreserved:true,bridgeProtocol:newHello.bridgeProtocol}));
 } finally {

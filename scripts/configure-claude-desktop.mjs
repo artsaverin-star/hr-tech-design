@@ -48,8 +48,9 @@ function currentContents(file) {
   }
 }
 
-export function configureClaudeDesktop({ home = os.homedir(), nodePath, serverPath, tokenPath, configDir = process.env.CLAUDE_CONFIG_DIR } = {}) {
-  if (configDir && path.resolve(configDir) !== path.join(home, '.claude')) {
+export function configureClaudeDesktop({ home = os.homedir(), nodePath, serverPath, tokenPath, configDir = process.env.CLAUDE_CONFIG_DIR, client = 'desktop' } = {}) {
+  if (!['desktop', 'cli'].includes(client)) throw new Error('Неизвестный клиент Claude.');
+  if (client === 'desktop' && configDir) {
     throw new Error('Задан отдельный CLAUDE_CONFIG_DIR. Автонастройка Claude Desktop поддерживает стандартный каталог; существующие настройки не изменены.');
   }
   if (!path.isAbsolute(nodePath || '') || !path.isAbsolute(serverPath || '')) {
@@ -64,12 +65,16 @@ export function configureClaudeDesktop({ home = os.homedir(), nodePath, serverPa
   }
   const token = readOptionalToken(tokenPath);
   const entry = { type: 'stdio', command: nodePath, args: [serverPath], env: token ? { FIGMA_ACCESS_TOKEN: token } : {} };
-  const user = readConfig(path.join(home, '.claude.json'));
-  const legacy = readConfig(path.join(home, 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json'));
+  // An explicit CLAUDE_CONFIG_DIR moves CLI state to that directory, even when
+  // its value happens to be ~/.claude. Desktop profiles remain explicit-only.
+  const user = readConfig(path.join(client === 'cli' && configDir ? path.resolve(configDir) : home, '.claude.json'));
   // Desktop gives its legacy chat config precedence over the user-scope entry.
   // Update only an existing entry there; do not silently add a chat integration.
   const targets = [user];
-  if (Object.hasOwn(legacy.data.mcpServers || {}, SERVER_NAME)) targets.push(legacy);
+  if (client === 'desktop') {
+    const legacy = readConfig(path.join(home, 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json'));
+    if (Object.hasOwn(legacy.data.mcpServers || {}, SERVER_NAME)) targets.push(legacy);
+  }
   const prepared = [];
   const committed = [];
   try {
@@ -120,7 +125,7 @@ if (process.argv[1] && fs.realpathSync(process.argv[1]) === fileURLToPath(import
   try {
     const args = process.argv.slice(2);
     const options = {};
-    const names = { '--node': 'nodePath', '--server': 'serverPath', '--token-file': 'tokenPath' };
+    const names = { '--node': 'nodePath', '--server': 'serverPath', '--token-file': 'tokenPath', '--client': 'client' };
     for (let i = 0; i < args.length; i += 2) {
       if (!names[args[i]] || !args[i + 1]) throw new Error('Нужны параметры --node, --server и необязательный --token-file.');
       options[names[args[i]]] = args[i + 1];

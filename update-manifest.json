@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "version": "4.30",
+  "version": "4.31",
   "files": [
     {
       "path": "runtime/bin/bridge.mjs",
@@ -8,7 +8,7 @@
     },
     {
       "path": "runtime/bin/engine.mjs",
-      "sha256": "45169bf70eb67a87ae30872ffd4fffd51f54b373cc0721f518b847e8183b894a"
+      "sha256": "fbd3183a7030bcc10fd9b5e528098afe02b13c43c1f0463e3a542bd6a2174353"
     },
     {
       "path": "runtime/bin/supervisor.mjs",
@@ -20,15 +20,15 @@
     },
     {
       "path": "scripts/bootstrap-package.mjs",
-      "sha256": "240a8d44893f394e3f81bb8d62ae6c2ce1053b0754faa40da7cf67c85781879d"
+      "sha256": "1855eb42a0f3b39146bd721233aa30e77e3203fde657c61efe130f51280949dd"
     },
     {
       "path": "scripts/configure-claude-desktop.mjs",
-      "sha256": "5a53e18130ed944cc8cce8f28872ddcbd0c71bfde5a465d366b8669fdfe21f2b"
+      "sha256": "3a6d54311ad4e31f303cb0e1ccf90b1460f38a87b175ff7362cc04f4bf5d39b2"
     },
     {
       "path": "scripts/connect-mcp.sh",
-      "sha256": "543a423d1e074e682fb337e80b6855d9c91ff1616f3a2930c47cb798374f2c94"
+      "sha256": "46632793e2181e7d0f2f094230afd21e37911caa7ddfb022de211b32b605b09a"
     },
     {
       "path": "scripts/diagnose-mcp.mjs",
@@ -40,7 +40,7 @@
     },
     {
       "path": "scripts/link-knowledge.sh",
-      "sha256": "acaf141c236bd8434646ec72f5bf086fdf6edd74245016c54c00efafa83ab57c"
+      "sha256": "f4b766f9486370229db1417e0c453bd00906749569e67b485c054cba467c8e2d"
     },
     {
       "path": "scripts/repair.sh",
@@ -52,7 +52,7 @@
     },
     {
       "path": "claude/skills/hrtech/SKILL.md",
-      "sha256": "c89374404d9e53a13099ade8f23ba0e6e0a54efeaba0e2d552ae4760b16e7cca"
+      "sha256": "377836737a50704d6e67aaf7027556190b715c19ad6dcab785a95764b211770b"
     },
     {
       "path": "claude/skills/hrtech-arcadia/SKILL.md",
@@ -61,6 +61,38 @@
     {
       "path": "claude/skills/hrtech-audit/SKILL.md",
       "sha256": "0a45262401a525e61eae2d8ff0801735347591c07707017c6ca9ac1822612467"
+    },
+    {
+      "path": "claude/skills/hrtech-figma-search/SKILL.md",
+      "sha256": "ebe5c1723e377654c4fcb1ba3a4f9a2d4e6b39ea5daa98792889b33d2749dd2c"
+    },
+    {
+      "path": "claude/skills/hrtech-figma-search/references/refresh.md",
+      "sha256": "6755bd2788ee3a212674628e3bc482e31321da36242d85af76a344978196c48e"
+    },
+    {
+      "path": "claude/skills/hrtech-figma-search/references/runtime.md",
+      "sha256": "6727917bee2833645f6d6632d0492e3a4a66ee90e4c40882298bd118747a351e"
+    },
+    {
+      "path": "claude/skills/hrtech-figma-search/scripts/catalog-path.mjs",
+      "sha256": "189ae71ba3a4eeb751b66415614bada431ffc96b630e19741c890aa010cf7a5a"
+    },
+    {
+      "path": "claude/skills/hrtech-figma-search/scripts/index-io.mjs",
+      "sha256": "d2259e21c509b58d668cbd3e76a1f5674d946359a761079868857cb46d9b6a3f"
+    },
+    {
+      "path": "claude/skills/hrtech-figma-search/scripts/pack.mjs",
+      "sha256": "4f5b83f80765ca8c2dc49224ba71a77a99513cf92c5e9605ad48436f00e7e8d4"
+    },
+    {
+      "path": "claude/skills/hrtech-figma-search/scripts/scan.mjs",
+      "sha256": "9c7afb6a94ac04cc2723a2579744c349c625d3d83450c7d4a3fe5bafc1c09fc8"
+    },
+    {
+      "path": "claude/skills/hrtech-figma-search/scripts/search.mjs",
+      "sha256": "a0c897d3a0e5664e8e57424fd5c88f0132ac5249303d36cd740f284bdf97ccee"
     },
     {
       "path": "claude/skills/hrtech-mobile/SKILL.md",
@@ -184,7 +216,7 @@
     },
     {
       "path": "figma-desktop-bridge/code.js",
-      "sha256": "d7e27aacb758c67cbd4f59a4a084da6ee72972acc0421f424b1d1db82e4b09b1"
+      "sha256": "038fac9dea465529b2b7934c5294f4c883d3741706f30821c779c49b8c71516a"
     },
     {
       "path": "figma-desktop-bridge/manifest.json",
@@ -192,7 +224,7 @@
     },
     {
       "path": "figma-desktop-bridge/ui.html",
-      "sha256": "c8781740f73657446ce765b0168b1c96ed5bb6fc01c06e0084775e3ca2af00ae"
+      "sha256": "7fafb6a0ce3b1bc6feecb5ce7ac6bf6f0885b78bc6913bfbf1d4a62b835ff71b"
     },
     {
       "path": "setup.sh",
@@ -200,7 +232,7 @@
     },
     {
       "path": "package.json",
-      "sha256": "d8b255ddbc4ff82c66100cb5341e3f1ef189aa29cf80719c2a3f3273aecb7172"
+      "sha256": "1673ce0f8f94c7cffc8c832a278230460efc7e081e2293e8eab2bb2ad2396fcd"
     },
     {
       "path": "LICENSE",

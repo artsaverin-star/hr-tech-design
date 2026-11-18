@@ -24,7 +24,7 @@ function fixture(t) {
   const userDir = path.join(dir, 'user');
   const bin = path.join(dir, 'bin');
   fs.mkdirSync(userDir, { recursive: true });
-  for (const script of ['agent-paths.sh', 'connect-mcp.sh', 'link-knowledge.sh', 'repair.sh']) {
+  for (const script of ['agent-paths.sh', 'connect-mcp.sh', 'configure-claude-desktop.mjs', 'link-knowledge.sh', 'repair.sh']) {
     let source = fs.readFileSync(path.join(root, 'scripts', script), 'utf8');
     // These are CLI-only fixtures; never discover the host's real Claude.app.
     if (script === 'agent-paths.sh') source += '\nCLAUDE_DESKTOP_APP=""\n';
@@ -97,8 +97,10 @@ test('MCP registration preserves paths with spaces and updates Codex without rem
   assert.match(calls, /codex:mcp add figma-hrtech/);
   assert.match(calls, /codex:mcp get figma-hrtech --json/);
   assert.doesNotMatch(calls, /codex:mcp remove/);
-  assert.match(calls, /claude:mcp add figma-hrtech -s user/);
-  assert.doesNotMatch(calls, /claude:mcp get/);
+  assert.doesNotMatch(calls, /claude:mcp (?:remove|add|get)/);
+  const claude = JSON.parse(fs.readFileSync(path.join(f.userDir, '.claude.json'), 'utf8'));
+  assert.equal(claude.mcpServers['figma-hrtech'].command, path.join(f.bin, 'node'));
+  assert.deepEqual(claude.mcpServers['figma-hrtech'].args, [path.join(f.repo, 'runtime/bin/bridge.mjs')]);
   assert.ok(calls.includes(path.join(f.repo, 'runtime/bin/bridge.mjs')));
 });
 
@@ -122,6 +124,22 @@ test('failed Codex upsert leaves its previous configuration intact', t => {
   const result = run(f, 'connect-mcp.sh', { BULOCHKA_TEST_FAIL_codex: '1' });
   assert.equal(result.status, 1);
   assert.equal(fs.readFileSync(f.env.BULOCHKA_TEST_STATE, 'utf8'), 'previous config');
+});
+
+test('standalone Claude registration preserves its working config when the atomic writer fails', t => {
+  const f = fixture(t);
+  const userConfig = path.join(f.userDir, '.claude.json');
+  const original = JSON.stringify({ mcpServers: { 'figma-hrtech': { command: '/working/node', args: ['/working/bridge.mjs'] } } });
+  write(userConfig, original);
+  // Inject a real commit failure in the isolated helper process.
+  const helper = path.join(f.repo, 'scripts/configure-claude-desktop.mjs');
+  const source = fs.readFileSync(helper, 'utf8');
+  write(helper, source.replace("const SERVER_NAME = 'figma-hrtech';", "const SERVER_NAME = 'figma-hrtech';\nfs.renameSync = () => { throw new Error('simulated ENOSPC'); };"));
+  const result = run(f, 'connect-mcp.sh');
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.equal(fs.readFileSync(userConfig, 'utf8'), original);
+  assert.match(result.stdout, /Не удалось сохранить настройки Claude/);
+  assert.doesNotMatch(fs.readFileSync(f.env.BULOCHKA_TEST_CALLS, 'utf8'), /claude:mcp (?:remove|add)/);
 });
 
 for (const mode of ['fail', 'malformed', 'wrong-command', 'wrong-args', 'disabled']) {
@@ -195,6 +213,25 @@ test('setup completes unattended with three steps, no token prompt and one next-
   assert.ok(!fs.existsSync(path.join(f.userDir, '.hrtech/figma-token')));
   const source = fs.readFileSync(path.join(f.repo, 'setup.sh'), 'utf8');
   assert.doesNotMatch(source, /\/dev\/tty|read -r|TOKEN_URL/);
+});
+
+test('standalone Claude MCP, skills and commands use the same custom profile without changing default skills', t => {
+  const f = fixture(t);
+  addKnowledge(f);
+  const configDir = path.join(f.userDir, 'custom Claude profile');
+  const defaultSkill = path.join(f.userDir, '.claude/skills/hrtech/SKILL.md');
+  const personalSkill = path.join(configDir, 'skills/personal/SKILL.md');
+  write(defaultSkill, 'Default profile stays unchanged');
+  write(personalSkill, 'Personal skill stays unchanged');
+  const result = run(f, '../setup.sh', { CLAUDE_CONFIG_DIR: configDir });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const config = JSON.parse(fs.readFileSync(path.join(configDir, '.claude.json'), 'utf8'));
+  assert.deepEqual(config.mcpServers['figma-hrtech'].args, [path.join(f.repo, 'runtime/bin/bridge.mjs')]);
+  assert.equal(fs.realpathSync(path.join(configDir, 'skills/hrtech')), path.join(f.repo, 'claude/skills/hrtech'));
+  assert.equal(fs.realpathSync(path.join(configDir, 'commands/hrtech.md')), path.join(f.repo, 'claude/commands/hrtech.md'));
+  assert.equal(fs.readFileSync(defaultSkill, 'utf8'), 'Default profile stays unchanged');
+  assert.equal(fs.readFileSync(personalSkill, 'utf8'), 'Personal skill stays unchanged');
+  assert.equal(fs.existsSync(path.join(f.userDir, '.claude.json')), false);
 });
 
 test('setup preserves an existing token without prompting or claiming its permissions were checked', t => {

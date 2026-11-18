@@ -568,6 +568,7 @@
           <p class="bun-list-lead">Откройте макет и напишите в чате, например:</p>
           <!-- BULOCHKA_SKILLS_START -->
           <ul class="bun-list bun-examples">
+            <li><strong>«Найди в Figma экран управления доступами»</strong></li>
             <li><strong>«Проверь этот экран по HRDS»</strong><span>Найдёт и исправит нарушения дизайн-системы.</span></li>
             <li><strong>«Собери мобильную версию экрана»</strong><span>Адаптирует макет на 375 px по HRDS.</span></li>
             <li><strong>«Найди, как это сделано на проде»</strong><span>Проверит исходники, тексты и состояния.</span></li>
@@ -599,7 +600,7 @@
           </details>
           <details class="bun-details">
             <summary>Диагностика</summary>
-            <div class="b3-setting-row"><strong>Версия</strong><span><span id="b6-settings-version">v4.30</span><span id="b3-bridge-version"></span></span></div>
+            <div class="b3-setting-row"><strong>Версия</strong><span><span id="b6-settings-version">v4.31</span><span id="b3-bridge-version"></span></span></div>
             <div class="b3-setting-row"><strong>Помощники</strong><span id="b3-codex-meta">Нет данных</span></div>
             <div class="b3-setting-row"><strong>Умения</strong><span id="hrtech-skills-count">Нет данных</span></div>
             <p class="b3-card-note" id="hrtech-skills-hint"></p>
@@ -625,7 +626,7 @@
 
 
     // ── Bulochka 3.0 product shell ───────────────────────────────────────────
-    // Product state uses only connections identified by SERVER_HELLO.
+    // Transport metadata stays available for repair before file registration completes.
     function hrtechNavigate(view) {
       var target = view || 'skills';
       if (target !== 'skills' && target !== 'settings') target = 'skills';
@@ -737,7 +738,7 @@
     // Кнопка «Повторить поиск» запускает реальный скан портов и сразу показывает
     // пошаговый статус. При активной связи она скрыта: повторный вызов всё равно no-op.
     function hrtechActivate() {
-      if (hrtechReadyConnections().length > 0) return;
+      if (hrtechReadyConnections().some(function(c) { return c.fileRegistered; })) return;
       window.__hrtechConnStartedAt = Date.now();  // сброс грейса → сразу «ищу помощника…»
       if (typeof window.__wsManualScan === 'function') window.__wsManualScan();
       else if (typeof window.__wsScanAndConnect === 'function') window.__wsScanAndConnect();
@@ -745,7 +746,7 @@
     }
 
     function hrtechAssistantNames() {
-      return hrtechReadyConnections().map(function(c) {
+      return hrtechReadyConnections().filter(function(c) { return c.fileRegistered; }).map(function(c) {
         return c.serverInfo.mcpClient && c.serverInfo.mcpClient.name;
       }).filter(function(name, i, all) { return name && all.indexOf(name) === i; });
     }
@@ -758,6 +759,8 @@
     // A transport link and a completed MCP handshake are separate facts.
     function hrtechConnState() {
       var n = hrtechReadyConnections().length;
+      var registered = hrtechReadyConnections().some(function(c) { return c.fileRegistered; });
+      var hasMcp = hrtechReadyConnections().some(function(c) { return c.serverInfo.mcpClient; });
       var title = document.getElementById('bun-connection-title');
       var msg = document.getElementById('hrtech-conn-msg');
       var retry = document.getElementById('hrtech-connect');
@@ -765,7 +768,7 @@
       var searching = Date.now() - (window.__hrtechConnStartedAt || Date.now()) < 9000;
       var outdated = document.querySelector('.hrtech-app').classList.contains('hrtech-outdated');
       var state = n > 0 ? (outdated ? 'outdated' : (hrtechAssistantNames().length ? 'connected' : 'searching')) : paused ? 'paused' : searching ? 'searching' : 'offline';
-      var label = n > 0 ? (outdated ? 'Версии различаются' : (hrtechAssistantNames().length ? hrtechAssistantNames().join(' · ') + ' подключён' : 'Мост Figma доступен')) : paused ? 'На паузе' : searching ? 'Подключаюсь…' : 'Нет подключения';
+      var label = n > 0 ? (outdated ? 'Версии различаются' : (hrtechAssistantNames().length ? hrtechAssistantNames().join(' · ') + ' подключён' : hasMcp ? 'Определяю файл…' : 'Мост Figma доступен')) : paused ? 'На паузе' : searching ? 'Подключаюсь…' : 'Нет подключения';
       title.textContent = 'Подключение';
       document.getElementById('bun-status-label').textContent = label;
       var status = document.getElementById('bun-connection-status');
@@ -775,13 +778,13 @@
       status.title = n > 0 ? 'Связь с мостом Figma. Открыть настройки' : 'Открыть помощь с подключением';
       document.getElementById('hrtech-lamp').classList.toggle('on', n > 0 && !outdated && hrtechAssistantNames().length > 0);
       msg.textContent = n > 0
-        ? (outdated ? 'Нужно обновить мост.' : (hrtechAssistantNames().length ? '' : 'Помощник ещё не подключился.'))
+        ? (outdated ? 'Нужно обновить мост.' : (hrtechAssistantNames().length ? '' : hasMcp ? 'Жду подтверждения файла от моста.' : 'Помощник ещё не подключился.'))
         : (paused ? 'Поиск приостановлен.' : 'Выполните команду в Терминале один раз.');
       msg.hidden = !msg.textContent;
       var fileBlock = document.getElementById('bun-connected-file');
-      if (fileBlock) fileBlock.hidden = n === 0;
+      if (fileBlock) fileBlock.hidden = !registered;
       if (n > 0) document.getElementById('hrtech-install-note').textContent = '';
-      retry.hidden = n > 0;
+      retry.hidden = registered;
       retry.textContent = paused ? 'Продолжить поиск' : 'Проверить связь';
     }
 
@@ -993,7 +996,7 @@
     }
 
     // «Обновить»: просим локальный мост подтянуть свежие runtime и skills.
-    var HRTECH_UI_VERSION = '4.30';
+    var HRTECH_UI_VERSION = '4.31';
     (function () {
       var __nodes = [document.getElementById('hrtech-ver-badge'), document.getElementById('b6-settings-version')];
       for (var __i = 0; __i < __nodes.length; __i++) {
@@ -1648,6 +1651,7 @@
       var WS_PORT_RANGE_START = 9223;
       var WS_PORT_RANGE_END = 9232;
       var WS_HANDSHAKE_TIMEOUT_MS = 5000;
+      var WS_FILE_REGISTRATION_TIMEOUT_MS = 20000;
 
       // Multi-connection state: plugin connects to ALL active MCP servers
       // so that every Claude tab/CLI instance gets Figma access.
@@ -1866,6 +1870,7 @@
        * Initialize a new connection to a server: send FILE_INFO, variables, attach handlers.
        */
       function initializeConnection(connWs, port) {
+        var conn = activeConnections.find(function(c) { return c.ws === connWs; });
         // Forward cached variables if available
         if (window.__figmaVariablesReady && window.__figmaVariablesData) {
           connWs.send(JSON.stringify({
@@ -1877,8 +1882,12 @@
         // Proactively report file identity to this server
         window.sendPluginCommand('GET_FILE_INFO', {})
           .then(function(info) {
-            if (connWs.readyState === 1 && info && info.success !== false) {
-              connWs.send(JSON.stringify({ type: 'FILE_INFO', data: info.fileInfo || info }));
+            if (connWs.readyState === 1 && activeConnections.indexOf(conn) !== -1) {
+              var file = info && (info.fileInfo || info);
+              if (!info || info.success === false || !file.fileKey) throw new Error('File identity is unavailable');
+              if (conn.fileKey && conn.fileKey !== file.fileKey) throw new Error('File identity changed during registration');
+              conn.fileKey = file.fileKey;
+              connWs.send(JSON.stringify({ type: 'FILE_INFO', data: file }));
               // Keep the "work only in this file" lock across reconnects / new servers.
               if (window.__hrtechLocked) {
                 try { connWs.send(JSON.stringify({ type: 'PIN_FILE' })); } catch (e) {}
@@ -1887,7 +1896,9 @@
               try { connWs.send(JSON.stringify({ type: 'HRTECH_HOST_STATUS_REQUEST' })); } catch (e) {}
             }
           })
-          .catch(function() { /* non-critical */ });
+          .catch(function() {
+            if (conn && activeConnections.indexOf(conn) !== -1) conn.close('File identification failed');
+          });
       }
 
       /**
@@ -2029,7 +2040,27 @@
               source.serverInfo = message.data;
               clearTimeout(source.handshakeTimer);
               source.handshakeTimer = null;
-              // Repeated open-without-HELLO failures must keep their backoff.
+              // Keep older bridges available for update; only bridges advertising
+              // the additive ACK get a registration deadline. HELLO alone is not ready.
+              if (message.data.fileRegistrationAck && !source.fileRegistered) {
+                source.handshakeTimer = setTimeout(function() {
+                  if (userPaused || source.fileRegistered || activeConnections.indexOf(source) === -1) return;
+                  source.close('File registration timeout');
+                }, WS_FILE_REGISTRATION_TIMEOUT_MS);
+              }
+              if (typeof window.__hrtechConnectionChanged === 'function') window.__hrtechConnectionChanged();
+              return;
+            }
+
+            if (message.type === 'FILE_REGISTERED' && message.data && source.serverInfo) {
+              if (!message.data.fileKey || (source.fileKey && source.fileKey !== message.data.fileKey)) {
+                source.close('File registration mismatch');
+                return;
+              }
+              source.fileKey = message.data.fileKey;
+              source.fileRegistered = true;
+              clearTimeout(source.handshakeTimer);
+              source.handshakeTimer = null;
               reconnectAttempts[port] = 0;
               if (typeof window.__hrtechConnectionChanged === 'function') window.__hrtechConnectionChanged();
               return;
@@ -2291,7 +2322,7 @@
           try { pendingToClose[port].close(1000, 'Manual reconnect'); } catch (e) {}
         });
         activeConnections.slice().forEach(function(conn) {
-          if (typeof conn.port === 'number' && !conn.serverInfo && conn.close) conn.close('Manual reconnect');
+          if (typeof conn.port === 'number' && !conn.fileRegistered && conn.close) conn.close('Manual reconnect');
         });
         wsScanAndConnect();
         if (typeof window.__hrtechConnectionChanged === 'function') window.__hrtechConnectionChanged();

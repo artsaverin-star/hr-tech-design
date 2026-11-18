@@ -4,6 +4,7 @@ import path from 'node:path';
 import test from 'node:test';
 import vm from 'node:vm';
 import ts from 'typescript';
+import { EventEmitter } from 'node:events';
 
 const html = fs.readFileSync(new URL('../figma-desktop-bridge/ui.html', import.meta.url), 'utf8');
 const start = html.indexOf('    (function() {\n      // Port range for multi-instance support');
@@ -13,7 +14,7 @@ const clientSource = html.slice(start, end);
 
 // Execute the production client with controlled network events. No real ports,
 // user settings, or Figma documents are touched by these regressions.
-function clientHarness({ constructorThrows = false, onSocket } = {}) {
+function clientHarness({ constructorThrows = false, onSocket, sendPluginCommand } = {}) {
   const sockets = [];
   const timers = [];
   const intervals = [];
@@ -51,7 +52,7 @@ function clientHarness({ constructorThrows = false, onSocket } = {}) {
       sockets.push(this);
       if (onSocket) schedule(() => onSocket(this), 0);
     }
-    send() {}
+    send(data) { (this.sent ||= []).push(JSON.parse(data)); }
     message(data) { this.onmessage?.({ data: JSON.stringify(data) }); }
     open() { this.readyState = 1; this.onopen?.(); }
     close(code = 1006, reason = '') {
@@ -60,9 +61,9 @@ function clientHarness({ constructorThrows = false, onSocket } = {}) {
     }
   }
   const window = {
-    sendPluginCommand: () => Promise.resolve({ success: true, fileInfo: { fileKey: 'test-file' } }),
+    sendPluginCommand: sendPluginCommand || (() => Promise.resolve({ success: true, fileInfo: { fileKey: 'test-file' } })),
     __hrtechConnectionChanged() {
-      changes.push(window.__wsGetActiveConnections().filter(c => c.ws.readyState === 1 && c.serverInfo).length);
+      changes.push(window.__wsGetActiveConnections().filter(c => c.ws.readyState === 1 && c.fileRegistered).length);
     },
   };
   vm.runInNewContext(clientSource, {
@@ -82,6 +83,11 @@ function finishScan(sockets, livePorts = [9223]) {
     if (livePorts.includes(port)) socket.open();
     else socket.close();
   }
+}
+
+function confirmFile(socket, data = {}) {
+  socket.message({ type: 'SERVER_HELLO', data: { hrtechVersion: '4.30', fileRegistrationAck: true, ...data } });
+  socket.message({ type: 'FILE_REGISTERED', data: { fileKey: 'test-file' } });
 }
 
 test('all live MCP sessions connect, including one starting after the initial scan', () => {
@@ -111,7 +117,7 @@ test('missing SERVER_HELLO expires and reconnects even if socket close never com
   const replacement = h.sockets.findLast(s => s.url.endsWith(':9223'));
   assert.notEqual(replacement, silent);
   replacement.open();
-  replacement.message({ type: 'SERVER_HELLO', data: { hrtechVersion: '4.27' } });
+  confirmFile(replacement);
   silent.onclose({ code: 1000, reason: 'Server handshake timeout' });
   silent.message({ type: 'SERVER_HELLO', data: { hrtechVersion: 'old' } });
   h.advance(10000);
@@ -124,7 +130,7 @@ test('manual retry replaces unconfirmed sockets and preserves other confirmed MC
   finishScan(h.sockets.slice(), [9223, 9224]);
   const silent = h.sockets[0];
   const confirmed = h.sockets[1];
-  confirmed.message({ type: 'SERVER_HELLO', data: { hrtechVersion: '4.27' } });
+  confirmFile(confirmed);
   const deadline = h.window.__wsGetActiveConnections()[0].handshakeTimer;
   h.window.__wsManualScan();
   const replacement = h.sockets.findLast(s => s.url.endsWith(':9223'));
@@ -134,7 +140,7 @@ test('manual retry replaces unconfirmed sockets and preserves other confirmed MC
   assert.equal(h.window.__wsGetActiveConnections()[0].ws, confirmed);
   assert.equal(h.sockets.filter(s => s.url.endsWith(':9224')).length, 1);
   replacement.open();
-  replacement.message({ type: 'SERVER_HELLO', data: { hrtechVersion: '4.27' } });
+  confirmFile(replacement);
   deadline.fn(); // an already queued old timeout must not retire its replacement
   assert.equal(h.window.__wsGetActiveConnections().length, 2);
   h.advance(10000);
@@ -152,7 +158,7 @@ test('manual retry invalidates the pending scan without accepting a late open fr
   assert.equal(abandoned.readyState, 3);
   assert.equal(h.window.__wsIsScanning(), true, 'old callbacks cannot finish the replacement scan');
   finishScan(h.sockets.slice(10));
-  replacement.message({ type: 'SERVER_HELLO', data: { hrtechVersion: '4.27' } });
+  confirmFile(replacement);
   assert.equal(h.window.__wsIsScanning(), false);
   assert.equal(h.window.__wsGetActiveConnections().length, 1);
   assert.equal(h.window.__wsGetActiveConnections()[0].ws, replacement);
@@ -171,11 +177,11 @@ test('repeated open-without-HELLO failures back off; watchdog cannot bypass the 
   assert.ok(attempts.filter(s => s.readyState < 2).length <= 1, 'never duplicate an active attempt on a port');
   const current = h.window.__wsGetActiveConnections().find(c => c.port === 9223);
   assert.ok(current);
-  current.ws.message({ type: 'SERVER_HELLO', data: { hrtechVersion: '4.27' } });
+  confirmFile(current.ws);
   current.ws.close();
   const before = attempts.length;
   h.advance(1000);
-  assert.equal(h.sockets.filter(s => s.url.endsWith(':9223')).length, before + 1, 'HELLO resets the retry budget');
+  assert.equal(h.sockets.filter(s => s.url.endsWith(':9223')).length, before + 1, 'file registration resets the retry budget');
 });
 
 test('pause and replacement cancel handshake deadlines and keep background retries suppressed', () => {
@@ -200,7 +206,7 @@ test('a late-starting MCP is still discovered after the initial retry budget is 
   const h = clientHarness({ onSocket(socket) {
     if (available && socket.url.endsWith(':9223')) {
       socket.open();
-      socket.message({ type: 'SERVER_HELLO', data: { hrtechVersion: '4.27' } });
+      confirmFile(socket);
     } else socket.close();
   } });
   h.advance(30000);
@@ -208,7 +214,7 @@ test('a late-starting MCP is still discovered after the initial retry budget is 
   available = true;
   h.advance(4000);
   assert.equal(h.window.__wsGetActiveConnections().length, 1);
-  assert.equal(h.window.__wsGetActiveConnections()[0].serverInfo.hrtechVersion, '4.27');
+  assert.equal(h.window.__wsGetActiveConnections()[0].fileRegistered, true);
 });
 
 test('product status is notified immediately on identity, dropout, pause and retry', () => {
@@ -216,7 +222,9 @@ test('product status is notified immediately on identity, dropout, pause and ret
   finishScan(h.sockets.slice());
   assert.equal(h.changes.at(-1), 0, 'TCP open is not a confirmed bridge');
   h.sockets[0].message({ type: 'SERVER_HELLO', data: { hrtechVersion: '4.27', skills: [] } });
-  assert.equal(h.changes.at(-1), 1, 'identity is visible before the periodic UI tick');
+  assert.equal(h.changes.at(-1), 0, 'server identity alone does not confirm file registration');
+  h.sockets[0].message({ type: 'FILE_REGISTERED', data: { fileKey: 'test-file' } });
+  assert.equal(h.changes.at(-1), 1, 'file registration is visible before the periodic UI tick');
   h.sockets[0].close();
   assert.equal(h.changes.at(-1), 0, 'dropout is visible before the periodic UI tick');
   const count = h.changes.length;
@@ -226,11 +234,66 @@ test('product status is notified immediately on identity, dropout, pause and ret
   assert.equal(h.changes.length, count + 2);
 });
 
+test('a failed file identity request reconnects instead of leaving a false confirmed connection', async () => {
+  let requests = 0;
+  const h = clientHarness({ sendPluginCommand() {
+    requests++;
+    return requests === 1 ? Promise.reject(new Error('Plugin worker timed out'))
+      : Promise.resolve({ success: true, fileInfo: { fileKey: 'test-file' } });
+  } });
+  finishScan(h.sockets.slice());
+  h.sockets[0].message({ type: 'SERVER_HELLO', data: { fileRegistrationAck: true, mcpClient: { name: 'Codex' } } });
+  assert.equal(h.changes.at(-1), 0);
+  await Promise.resolve(); await Promise.resolve();
+  assert.equal(h.window.__wsGetActiveConnections().length, 0);
+  h.advance(1000);
+  const replacement = h.sockets.findLast(socket => socket.url.endsWith(':9223'));
+  replacement.open();
+  await Promise.resolve();
+  assert.equal(requests, 2);
+  assert.ok(replacement.sent.some(message => message.type === 'FILE_INFO' && message.data.fileKey === 'test-file'));
+  confirmFile(replacement, { mcpClient: { name: 'Codex' } });
+  assert.equal(h.changes.at(-1), 1);
+});
+
+test('a bridge ACK is required for registration and must identify the expected file', async () => {
+  for (const failure of ['missing', 'mismatch']) {
+    const h = clientHarness();
+    finishScan(h.sockets.slice());
+    await Promise.resolve();
+    const socket = h.sockets[0];
+    socket.message({ type: 'SERVER_HELLO', data: { fileRegistrationAck: true, mcpClient: { name: 'Codex' } } });
+    assert.equal(h.changes.at(-1), 0);
+    if (failure === 'missing') {
+      h.advance(19999);
+      assert.equal(h.window.__wsGetActiveConnections().length, 1);
+      h.advance(1);
+    } else {
+      socket.message({ type: 'FILE_REGISTERED', data: { fileKey: 'other-file' } });
+    }
+    assert.equal(h.window.__wsGetActiveConnections().length, 0, failure);
+    assert.equal(h.changes.at(-1), 0, failure);
+  }
+});
+
+test('an older bridge stays reachable for update without being reported as a registered file', () => {
+  const h = clientHarness();
+  finishScan(h.sockets.slice());
+  const socket = h.sockets[0];
+  socket.message({ type: 'SERVER_HELLO', data: { hrtechVersion: '4.30', bridgeProtocol: 1, mcpClient: { name: 'Codex' } } });
+  h.advance(30000);
+  assert.equal(socket.readyState, 1);
+  assert.equal(h.window.__wsGetActiveConnections()[0].serverInfo.mcpClient.name, 'Codex');
+  assert.equal(h.changes.at(-1), 0);
+  h.window.__wsManualScan();
+  assert.equal(socket.readyState, 3, 'manual retry is available for unregistered transport');
+});
+
 test('a late message from a departed socket cannot restore stale host metadata', () => {
   const h = clientHarness();
   finishScan(h.sockets.slice());
   const socket = h.sockets[0];
-  socket.message({ type: 'SERVER_HELLO', data: { hrtechVersion: '4.27', skills: [] } });
+  confirmFile(socket, { skills: [] });
   socket.message({ type: 'HRTECH_HOST_STATUS', data: { agents: { codex: { installed: true } } } });
   assert.equal(h.window.__wsGetActiveConnections()[0].hostStatus.agents.codex.installed, true);
   socket.close();
@@ -317,6 +380,66 @@ test('a plugin replaced by another window does not steal the connection back', (
 });
 
 const serverSource = fs.readFileSync(new URL('../src/core/websocket-server.ts', import.meta.url), 'utf8');
+const serverClass = ts.transpileModule(
+  serverSource.slice(serverSource.indexOf('export class FigmaWebSocketServer')).replace('export class', 'class'),
+  { compilerOptions: { target: ts.ScriptTarget.ES2022 } },
+).outputText;
+function serverHarness() {
+  const context = vm.createContext({
+    EventEmitter, WebSocket: { OPEN: 1, CONNECTING: 0 },
+    logger: { info() {}, warn() {}, debug() {}, error() {} },
+    setTimeout(fn, delay) { return { fn, delay }; }, clearTimeout() {},
+    setInterval() {}, clearInterval() {},
+  });
+  const Server = vm.runInContext(serverClass + '\nFigmaWebSocketServer;', context);
+  const server = new Server({ port: 0 });
+  const socket = () => ({
+    readyState: 1, sent: [],
+    send(message) { this.sent.push(JSON.parse(message)); },
+    close() { this.readyState = 2; },
+  });
+  return { server, socket };
+}
+
+test('FILE_INFO registers initial and refreshed selection, and remains compatible with old plugins', () => {
+  const { server, socket } = serverHarness();
+  const first = socket();
+  const selected = [{ id: '1:2', name: 'Selected frame', type: 'FRAME' }];
+  server.handleMessage({ type: 'FILE_INFO', data: { fileKey: 'A', fileName: 'Design', currentPage: 'Page', selection: selected, selectionCount: 1 } }, first);
+  assert.deepEqual(server.getCurrentSelection().nodes, selected);
+  assert.equal(server.getCurrentSelection().count, 1);
+  assert.equal(server.getCurrentSelection().page, 'Page');
+  assert.deepEqual(first.sent.at(-1), { type: 'FILE_REGISTERED', data: { fileKey: 'A', fileName: 'Design' } });
+
+  const replacement = socket();
+  server.handleMessage({ type: 'FILE_INFO', data: { fileKey: 'A', fileName: 'Design', currentPage: 'Page 2', selection: [], selectionCount: 0 } }, replacement);
+  assert.equal(server.getCurrentSelection().count, 0, 'reconnect replaces stale selection even when selection becomes empty');
+  assert.equal(server.getCurrentSelection().page, 'Page 2');
+  assert.equal(server.isClientConnected(), true);
+
+  const legacy = socket();
+  server.handleMessage({ type: 'FILE_INFO', data: { fileKey: 'B', fileName: 'Legacy plugin' } }, legacy);
+  assert.equal(server.getConnectedFileInfo().fileKey, 'B');
+  assert.equal(server.isClientConnected(), true, 'no client-side ACK is required from older plugins');
+});
+
+test('late identity from a retired socket cannot evict its live replacement', () => {
+  const { server, socket } = serverHarness();
+  const old = socket(), replacement = socket();
+  const identity = { type: 'FILE_INFO', data: { fileKey: 'A', fileName: 'Design' } };
+  server.handleMessage(identity, old);
+  server.handleMessage(identity, replacement);
+  assert.equal(old.readyState, 2);
+  server.handleMessage(identity, old);
+  assert.equal(server.clients.get('A').ws, replacement);
+  assert.equal(replacement.readyState, 1);
+  // Retirement is authoritative even if a delayed callback still sees OPEN.
+  old.readyState = 1;
+  server.handleMessage(identity, old);
+  assert.equal(server.clients.get('A').ws, replacement);
+  assert.equal(server.isClientConnected(), true);
+});
+
 const helpers = serverSource.slice(serverSource.indexOf('let _skillsCache:'), serverSource.indexOf("import { createChildLogger }"));
 const helpersJs = ts.transpileModule(helpers, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
 function discoveryHarness(files = {}, executableFiles = []) {
@@ -388,9 +511,9 @@ test('MCP initialization updates only its own live connection and ignores late e
 test('connection summary includes every bridge version and only confirmed MCP names', () => {
   const helpers = html.slice(html.indexOf('    function hrtechAssistantNames()'), html.indexOf('    // A transport link and a completed MCP handshake'));
   const context = { hrtechReadyConnections: () => [
-    { port: 9223, serverInfo: { hrtechVersion: '4.27', mcpClient: { name: 'Codex' } } },
+    { port: 9223, fileRegistered: true, serverInfo: { hrtechVersion: '4.27', mcpClient: { name: 'Codex' } } },
     { port: 9224, serverInfo: { hrtechVersion: '4.25' } },
-    { port: 9225, serverInfo: { hrtechVersion: '4.27', mcpClient: { name: 'Codex' } } },
+    { port: 9225, fileRegistered: true, serverInfo: { hrtechVersion: '4.27', mcpClient: { name: 'Codex' } } },
   ] };
   vm.createContext(context);
   vm.runInContext(helpers, context);

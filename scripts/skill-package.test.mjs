@@ -7,16 +7,18 @@ import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const scratch = path.join(root, 'bulochka-v4-26', 'skill-package-tests');
-const names = [
-  'hrtech', 'hrtech-arcadia', 'hrtech-audit', 'hrtech-mobile',
-  'hrtech-proto-spec', 'hrtech-prototipnitsa', 'hrtech-spec',
-];
+const skillsRoot = path.join(root, 'claude', 'skills');
+const names = fs.readdirSync(skillsRoot, { withFileTypes: true })
+  .filter(entry => entry.isDirectory() && fs.existsSync(path.join(skillsRoot, entry.name, 'SKILL.md')))
+  .map(entry => entry.name)
+  .sort();
 const sharedReferences = [
   '../../commands/hrtech.md', '../../commands/hrds-knowledge.md',
   '../../knowledge/team-notes.md',
 ];
 
 test('installed Codex and Claude skills find shared knowledge from an unrelated chat directory', () => {
+  assert.ok(names.includes('hrtech'), 'package includes the main routing skill');
   fs.mkdirSync(scratch, { recursive: true });
   const dir = fs.mkdtempSync(path.join(scratch, 'case-'));
   try {
@@ -49,10 +51,10 @@ test('installed Codex and Claude skills find shared knowledge from an unrelated 
         const skillDir = resolved.stdout.trim();
         assert.equal(skillDir, fs.realpathSync(path.join(payload, 'claude', 'skills', name)));
         const content = fs.readFileSync(path.join(skillDir, 'SKILL.md'), 'utf8');
+        assert.match(name, /^hrtech(?:-[a-z0-9-]+)?$/, `${name} is discoverable by the bridge`);
+        const declaredName = content.match(/^name:\s*(.+)$/m)?.[1].trim().replace(/^['"]|['"]$/g, '');
+        assert.equal(declaredName, name, `${name} declares its installed name`);
         const links = [...content.matchAll(/\]\(([^)]+)\)/g)].map(match => match[1]);
-        for (const target of sharedReferences) {
-          assert.ok(links.includes(target), `${name} exposes shared knowledge: ${target}`);
-        }
         for (const target of links.filter(target => !/^(?:[a-z]+:|#)/i.test(target))) {
           const resolvedTarget = fs.realpathSync(path.resolve(skillDir, target.split('#')[0]));
           assert.ok(resolvedTarget.startsWith(fs.realpathSync(payload) + path.sep), `${name}: ${target} stays in package`);
@@ -60,6 +62,9 @@ test('installed Codex and Claude skills find shared knowledge from an unrelated 
           fs.readFileSync(resolvedTarget, 'utf8');
         }
         if (name === 'hrtech') {
+          for (const target of sharedReferences) {
+            assert.ok(links.includes(target), `main skill exposes shared knowledge: ${target}`);
+          }
           for (const specialized of names.filter(name => name !== 'hrtech')) {
             assert.ok(links.includes(`../${specialized}/SKILL.md`), `main skill exposes ${specialized}`);
           }
