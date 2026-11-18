@@ -1,6 +1,6 @@
 {
   "name": "hr-tech-design",
-  "version": "1.32.1",
+  "version": "1.33.0",
   "description": "Булочка — мост между Figma и ИИ-помощником дизайнера плюс база знаний HR Tech",
   "type": "module",
   "main": "dist/local.js",

@@ -39,6 +39,7 @@ function readInstalledSkills(): Array<{ name: string; examples: string[] }> {
     join(homedir(), '.agents', 'skills'),
     join(process.env.CODEX_HOME || join(homedir(), '.codex'), 'skills'),
     join(homedir(), '.claude', 'skills'),
+    ...(process.env.CLAUDE_CONFIG_DIR ? [join(process.env.CLAUDE_CONFIG_DIR, 'skills')] : []),
   ];
   for (const root of roots) {
     let directories: string[];
@@ -63,6 +64,29 @@ function readInstalledSkills(): Array<{ name: string; examples: string[] }> {
   }
   _skillsCache = out;
   return out;
+}
+
+/** A client's handshake identity selects its own skill locations. A generic
+ * Claude/claude-ai name does not establish that the local Code skill is usable. */
+function isFigmaSearchSkillAvailable(client: { name: string; version: string } | null): boolean {
+  if (!client || typeof client.name !== 'string') return false;
+  const name = client.name.trim().toLowerCase().replace(/[\s_]+/g, '-');
+  let roots: string[];
+  if (['codex', 'codex-mcp-client', 'codex-cli', 'codex-cli-rs', 'codex-desktop'].includes(name)) {
+    roots = [join(homedir(), '.agents', 'skills'), join(process.env.CODEX_HOME || join(homedir(), '.codex'), 'skills')];
+  } else if (['claude-code', 'claudecode'].includes(name)) {
+    roots = [join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'skills')];
+  } else {
+    return false;
+  }
+  return roots.some(root => {
+    try {
+      const md = readFileSync(join(root, 'hrtech-figma-search', 'SKILL.md'), 'utf8');
+      const frontmatter = md.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+      const declared = frontmatter?.[1].match(/^name:\s*(.+)$/m)?.[1].trim().replace(/^['"]|['"]$/g, '');
+      return declared === 'hrtech-figma-search' && md.slice(frontmatter![0].length).trim().length > 0;
+    } catch { return false; }
+  });
 }
 
 /**
@@ -113,7 +137,7 @@ try {
 
 // Bulochka feature version — держать в синхроне с globalThis.hrtechVersion в code.js.
 // Плагин сравнивает свою версию с этой; при расхождении показывает кнопку «Починить».
-const HRTECH_VERSION = '4.32';
+const HRTECH_VERSION = '4.33';
 
 function getHrtechDistribution(): 'app' | 'terminal' | 'git' {
   try {
@@ -137,6 +161,7 @@ interface PendingRequest {
   timeoutId: ReturnType<typeof setTimeout>;
   createdAt: number;
   targetFileKey: string;
+  targetSocket: WebSocket;
 }
 
 export interface ConnectedFileInfo {
@@ -401,6 +426,7 @@ export class FigmaWebSocketServer extends EventEmitter {
                 hrtechVersion: HRTECH_VERSION,
                 bridgeProtocol: 1,
                 fileRegistrationAck: true,
+                repairCheck: true,
                 mcpClient: this.mcpClient,
                 distribution: getHrtechDistribution(),
                 figmaToken: !!process.env.FIGMA_ACCESS_TOKEN,
@@ -481,6 +507,9 @@ export class FigmaWebSocketServer extends EventEmitter {
     // Response to a command we sent
     if (message.id && this.pendingRequests.has(message.id)) {
       const pending = this.pendingRequests.get(message.id)!;
+      // A different file or a replacement connection must not complete an RPC
+      // issued to the original socket, even if it knows the request id.
+      if (pending.targetSocket !== ws) return;
       clearTimeout(pending.timeoutId);
       this.pendingRequests.delete(message.id);
 
@@ -494,6 +523,10 @@ export class FigmaWebSocketServer extends EventEmitter {
 
     // Unsolicited data from plugin (FILE_INFO, events, forwarded data)
     if (message.type) {
+      if (message.type === 'HRTECH_CHECK_CONNECTION') {
+        void this.checkHrtechConnection(message.requestId, ws);
+        return;
+      }
       // Bulochka: plugin asks whether this designer's local Codex is available.
       if (message.type === 'HRTECH_HOST_STATUS_REQUEST') {
         this.collectHrtechHostStatus()
@@ -694,6 +727,32 @@ export class FigmaWebSocketServer extends EventEmitter {
     }
 
     logger.debug({ message }, 'Unhandled WebSocket message');
+  }
+
+  /** Fixed read-only probe. The caller cannot select code, a file, or a device
+   * command. This verifies the file and reports existing MCP identity separately;
+   * a server-initiated probe does not establish new assistant activity. */
+  private async checkHrtechConnection(requestId: unknown, ws: WebSocket): Promise<void> {
+    if (typeof requestId !== 'string' || !requestId || requestId.length > 128) return;
+    const caller = this.findClientByWs(ws);
+    if (!caller || ws.readyState !== WebSocket.OPEN || this.retiredClients.has(ws)) return;
+    const fileKey = caller.fileKey;
+    let fileOk = false;
+    try {
+      const result = await this.sendCommand('GET_FILE_INFO', {}, 3000, fileKey);
+      fileOk = !!result && result.success !== false && result.fileInfo?.fileKey === fileKey;
+    } catch { /* timeout/worker errors are represented only by fileOk: false */ }
+    if (ws.readyState !== WebSocket.OPEN || this.retiredClients.has(ws) || this.clients.get(fileKey)?.ws !== ws) return;
+    // Read identity and the skill together after the roundtrip; neither the
+    // package's skill list nor another assistant's install is evidence here.
+    const client = this.mcpClient ? { name: this.mcpClient.name, version: this.mcpClient.version } : null;
+    const skillAvailable = isFigmaSearchSkillAvailable(client);
+    try {
+      ws.send(JSON.stringify({
+        type: 'HRTECH_CONNECTION_CHECK_RESULT',
+        data: { requestId, fileKey, fileOk, client, skillAvailable },
+      }));
+    } catch { /* the caller may disconnect between the check and send */ }
   }
 
   /**
@@ -927,6 +986,7 @@ export class FigmaWebSocketServer extends EventEmitter {
         timeoutId,
         createdAt: Date.now(),
         targetFileKey: fileKey,
+        targetSocket: client.ws,
       });
 
       const message = JSON.stringify({ id, method, params });

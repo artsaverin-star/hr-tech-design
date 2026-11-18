@@ -121,21 +121,25 @@ function repairHarness(options = {}) {
     }
     return nodes.get(key);
   }
-  let copied = 0;
+  let copied = 0, copiedReport = '';
   Object.assign(h.context, {
-    document: { getElementById: element, querySelector: element }, HRTECH_UI_VERSION: '4.32',
+    document: { getElementById: element, querySelector: element }, HRTECH_UI_VERSION: '4.33',
     hrtechCopyInstall() { copied++; },
+    hrtechCopyText(text) { copiedReport = text; return true; }, hrtechFoundAgents: () => [],
     hrtechTokenState() {}, hrtechSkills() {}, hrtechRenderSelectedAgentHost() {}, hrtechRequestHost() {}, hrtechAutoUpdate() {},
   });
   for (const name of ['hrtechReadyConnections', 'hrtechLegacyBridge', 'hrtechPrimaryConnection',
     'hrtechAssistantNames', 'hrtechConnectionVersions', 'hrtechConnState', 'hrtechRenderRepair',
-    'hrtechSyncBridgeState', 'hrtechRepair', 'window.__hrtechRepairResult']) {
+    'hrtechDistribution', 'hrtechHasSearchSkill', 'hrtechFileExchangeConfirmed', 'hrtechVersionOlder', 'hrtechFinishRepair', 'hrtechCheckConnection',
+    'hrtechMaintainRepair', 'window.__hrtechConnectionCheckResult',
+    'hrtechSyncBridgeState', 'hrtechCopyDiagnostics', 'hrtechRepair', 'window.__hrtechRepairResult', 'window.executeCode']) {
     vm.runInContext(productStatement(name), h.context);
   }
   h.window.__hrtechConnectionChanged = () => h.context.hrtechSyncBridgeState();
   return { ...h, element, copied: () => copied,
     repair: target => h.context.hrtechRepair(target),
     note: () => element('bun-update-note').textContent,
+    report() { h.context.hrtechCopyDiagnostics(); return copiedReport; },
   };
 }
 
@@ -271,7 +275,7 @@ test('successful legacy repair refreshes only the initiating socket and waits fo
   assert.notEqual(h.note(), 'Настройки восстановлены.', 'script exit alone is not file identification');
   pending({ success: true, fileInfo: { fileKey: 'test-file' } });
   await done;
-  assert.equal(h.note(), 'Настройки восстановлены.');
+  assert.equal(h.note(), 'Настройки восстановлены. Наличие умения поиска не подтверждено.');
   assert.equal(h.window.__hrtechRepairBusy, false);
   assert.equal(h.window.__hrtechRepairSocket, null);
   assert.equal(a.sent.filter(message => message.type === 'FILE_INFO').length, beforeA);
@@ -753,7 +757,8 @@ test('published plugin updates an older packaged bridge once, without touching g
  const context={window,HRTECH_UI_VERSION:'4.30',hrtechReadyConnections:()=>connections,hrtechRepair:c=>requests.push(c)};
  vm.createContext(context);vm.runInContext(html.slice(start,end),context);
  const attempt=()=>vm.runInContext('hrtechAutoUpdate()',context);
- const connection=(version,distribution='terminal',client={name:'Codex'})=>({serverInfo:{hrtechVersion:version,distribution,bridgeProtocol:1,mcpClient:client}});
+ const connection=(version,distribution='terminal',client={name:'Codex'})=>({fileKey:'test-file',serverInfo:{hrtechVersion:version,distribution,bridgeProtocol:1,mcpClient:client}});
+ const unidentified=connection('4.29');delete unidentified.fileKey;connections=[unidentified];attempt();assert.equal(requests.length,0);
  for(const candidate of [connection('4.30'),connection('4.31'),connection('4.29','git'),connection('4.29','terminal',null)]){connections=[candidate];attempt();}
  assert.equal(requests.length,0);
  const eligible=connection('4.29');connections=[eligible];attempt();attempt();
@@ -761,4 +766,289 @@ test('published plugin updates an older packaged bridge once, without touching g
  window.__hrtechRepairBusy=true;connections=[connection('4.28')];attempt();assert.equal(requests.length,1);
  assert.equal(vm.runInContext("hrtechVersionOlder('4.9','4.30')",context),true);
  assert.equal(vm.runInContext("hrtechVersionOlder('broken','4.30')",context),false);
+});
+
+const searchSkills = [{ name: 'hrtech-figma-search' }];
+function helloCheckedBridge(socket, overrides = {}) {
+  confirmFile(socket, { hrtechVersion: '4.33', bridgeProtocol: 1, repairCheck: true,
+    distribution: 'terminal', mcpClient: { name: 'Codex', version: '1' }, skills: searchSkills, ...overrides });
+}
+function checkRequest(socket) { return socket.sent.findLast(m => m.type === 'HRTECH_CHECK_CONNECTION'); }
+function checkedReply(socket, request = checkRequest(socket), overrides = {}) {
+  assert.ok(request, 'the UI must send a check request first');
+  socket.message({ type: 'HRTECH_CONNECTION_CHECK_RESULT', data: {
+    requestId: request.requestId, fileKey: 'test-file', fileOk: true,
+    client: { name: 'Codex', version: '1' }, skillAvailable: true, ...overrides,
+  } });
+}
+async function repairedModern(h, socket) {
+  h.repair(h.window.__wsGetActiveConnections().find(c => c.ws === socket));
+  socket.message({ type: 'HRTECH_REPAIR_RESULT', data: { finished: true, ok: true, skills: searchSkills, distribution: 'terminal' } });
+  await settleClient();
+  socket.message({ type: 'FILE_REGISTERED', data: { fileKey: 'test-file' } });
+  return checkRequest(socket);
+}
+
+test('advertised connection check waits for file registration and checks all three facts', async () => {
+  const h = repairHarness(); finishScan(h.sockets.slice()); await settleClient();
+  const socket = h.sockets[0];
+  socket.message({ type: 'SERVER_HELLO', data: { hrtechVersion: '4.33', bridgeProtocol: 1,
+    fileRegistrationAck: true, repairCheck: true, mcpClient: { name: 'Codex' }, skills: [] } });
+  assert.equal(checkRequest(socket), undefined);
+  assert.equal(h.element('hrtech-repair').textContent, 'Починить');
+  assert.equal(h.element('hrtech-connect').hidden, true, 'one repair button for an identified bridge');
+  socket.message({ type: 'FILE_REGISTERED', data: { fileKey: 'test-file' } });
+  checkedReply(socket);
+  const conn = h.window.__wsGetActiveConnections()[0];
+  assert.equal(conn.connectionCheck.fileOk, true);
+  assert.equal(h.context.hrtechHasSearchSkill(conn), true, 'the returned check supersedes the earlier skill list');
+  assert.equal(h.element('hrtech-repair').textContent, 'Обновить');
+  assert.match(h.report(), /Обмен с файлом: подтверждён/);
+  assert.equal(socket.sent.filter(m => m.type === 'HRTECH_REPAIR').length, 0);
+});
+
+test('check responses are correlated by socket, request and file; duplicates and retired sockets cannot change proof', async () => {
+  const h = repairHarness(); finishScan(h.sockets.slice(), [9223, 9224]); await settleClient();
+  const [a, b] = h.sockets; helloCheckedBridge(a); helloCheckedBridge(b);
+  const requestA = checkRequest(a), requestB = checkRequest(b);
+  checkedReply(b, requestA);
+  checkedReply(a, { requestId: 'unknown-request' });
+  assert.ok(h.window.__wsGetActiveConnections().every(c => !c.connectionCheck));
+  checkedReply(a, requestA);
+  checkedReply(a, requestA, { fileOk: false, skillAvailable: false });
+  assert.equal(h.window.__wsGetActiveConnections().find(c => c.ws === a).connectionCheck.fileOk, true);
+  checkedReply(b, requestB, { fileKey: 'another-file' });
+  assert.equal(h.window.__wsGetActiveConnections().find(c => c.ws === b).connectionCheck.fileOk, false);
+  a.close(); checkedReply(a, requestA);
+  assert.match(h.report(), /Обмен с файлом: ожидает подтверждения/);
+  assert.doesNotMatch(h.report(), /Связь с файлом подтверждена.*Умение поиска установлено/);
+});
+
+test('repair success requires file, MCP client and search skill, not just successful script exit', async () => {
+  for (const [override, message] of [
+    [{ fileOk: false }, /Связь с этим файлом не подтверждена/],
+    [{ client: null, skillAvailable: false }, /Подключение помощника не подтверждено/],
+    [{ skillAvailable: false }, /Не удалось подтвердить умение поиска для Codex/],
+    [{ fileKey: 'other-file' }, /Связь с этим файлом не подтверждена/],
+    [{}, /Связь с файлом подтверждена.*Умение поиска установлено/],
+  ]) {
+    const h = repairHarness(); finishScan(h.sockets.slice()); await settleClient();
+    const socket = h.sockets[0]; helloCheckedBridge(socket);
+    const oldRequest = checkRequest(socket);
+    const request = await repairedModern(h, socket);
+    assert.notEqual(request.requestId, oldRequest.requestId);
+    assert.equal(h.window.__hrtechRepairBusy, true);
+    assert.match(h.element('hrtech-repair').textContent, /Восстанавливаю|Проверяю/);
+    checkedReply(socket, oldRequest);
+    assert.equal(h.window.__hrtechRepairBusy, true, 'a pre-repair response cannot finish the operation');
+    checkedReply(socket, request, override);
+    assert.match(h.note(), message);
+    assert.equal(h.window.__hrtechRepairBusy, false);
+    assert.doesNotMatch(h.note(), /Обновление установлено/);
+    if (!override.client && 'client' in override) assert.doesNotMatch(h.note(), /умени[ея].*(нет|найден)/);
+  }
+});
+
+test('modern check timeout ignores late success and copied diagnostics retain the failure', async () => {
+  const h = repairHarness(); finishScan(h.sockets.slice()); await settleClient();
+  const socket = h.sockets[0]; helloCheckedBridge(socket);
+  const request = await repairedModern(h, socket);
+  h.advance(10000);
+  assert.equal(h.window.__hrtechRepairBusy, false);
+  assert.match(h.note(), /не ответил на проверку/);
+  checkedReply(socket, request);
+  assert.match(h.note(), /не ответил на проверку/);
+  assert.equal(h.element('hrtech-repair').textContent, 'Починить');
+  const report = h.report();
+  assert.match(report, /Установка: порт 9223: terminal/);
+  assert.match(report, /Обмен с файлом: ожидает подтверждения/);
+  assert.match(report, /Восстановление: порт 9223: Настройки восстановлены/);
+  assert.match(report, /Проверка: порт 9223: Мост не ответил/);
+  socket.close();
+  assert.doesNotMatch(h.report(), /Настройки восстановлены|Мост не ответил/);
+});
+
+test('a client initialized after the first automatic check receives one new check', async () => {
+  const h = repairHarness(); finishScan(h.sockets.slice()); await settleClient();
+  const socket = h.sockets[0]; helloCheckedBridge(socket, { mcpClient: null });
+  checkedReply(socket, undefined, { client: null, skillAvailable: false });
+  const count = socket.sent.filter(m => m.type === 'HRTECH_CHECK_CONNECTION').length;
+  h.context.hrtechSyncBridgeState(); h.context.hrtechSyncBridgeState();
+  assert.equal(socket.sent.filter(m => m.type === 'HRTECH_CHECK_CONNECTION').length, count);
+  socket.message({ type: 'HRTECH_MCP_STATUS', data: { client: { name: 'Codex', version: '1' } } });
+  assert.equal(socket.sent.filter(m => m.type === 'HRTECH_CHECK_CONNECTION').length, count + 1);
+  checkedReply(socket);
+  assert.match(h.report(), /Обмен с файлом: подтверждён/);
+});
+
+test('packaged legacy repair names the missing search skill, while Git reports actual installation without inventing a probe', async () => {
+  for (const distribution of ['app', 'git']) {
+    const h = repairHarness(); finishScan(h.sockets.slice()); await settleClient();
+    const socket = h.sockets[0]; helloLegacy(socket, { skills: [] });
+    socket.message({ type: 'HRTECH_HOST_STATUS', data: { distribution } });
+    h.repair();
+    socket.message({ type: 'HRTECH_REPAIR_RESULT', data: { finished: true, ok: true, distribution,
+      skills: distribution === 'git' ? searchSkills : [] } });
+    await settleClient();
+    assert.equal(h.window.__hrtechRepairBusy, false);
+    assert.equal(checkRequest(socket), undefined);
+    assert.equal(h.copied(), 0);
+    assert.doesNotMatch(h.note(), /Связь с файлом подтверждена|Терминал|установщик|введите/);
+    assert.match(h.note(), distribution === 'app' ? /В пакете 4.27 нет умения поиска/ : /Мост отвечает. Умение поиска установлено/);
+    assert.match(h.report(), new RegExp('Установка: порт 9223: ' + distribution));
+    assert.match(h.report(), distribution === 'app' ? /Обмен с файлом: ожидает подтверждения/ : /Файл передан мосту. Запроса помощника ещё не было/);
+    if (distribution === 'git') {
+      h.context.hrtechSyncBridgeState();
+      assert.equal(h.element('bun-status-label').textContent, 'Мост готов к работе');
+      assert.equal(h.context.hrtechAssistantNames().length, 0);
+    }
+  }
+});
+
+test('managed modern repair waits for its supervisor handover and validates the replacement without disturbing another assistant', async () => {
+  const h = repairHarness(); finishScan(h.sockets.slice(), [9223, 9224]); await settleClient();
+  const [old, other] = h.sockets;
+  helloCheckedBridge(old, { hrtechVersion: '4.32', repairCheck: false });
+  helloCheckedBridge(other);
+  h.repair(h.window.__wsGetActiveConnections().find(c => c.ws === old));
+  old.message({ type: 'HRTECH_REPAIR_RESULT', data: { finished: true, ok: true, distribution: 'terminal', skills: searchSkills } });
+  await settleClient();
+  old.message({ type: 'FILE_REGISTERED', data: { fileKey: 'test-file' } });
+  assert.equal(h.window.__hrtechRepairBusy, true, 'no premature legacy success before the supervisor poll');
+  assert.match(h.note(), /Жду обновлённый мост/);
+  old.close();
+  checkedReply(other);
+  assert.equal(h.window.__hrtechRepairBusy, true, 'another working session cannot complete this repair');
+  h.advance(1000);
+  const replacement = h.sockets.findLast(s => s.url.endsWith(':9223'));
+  replacement.open(); await settleClient(); helloCheckedBridge(replacement);
+  const request = checkRequest(replacement);
+  assert.ok(request);
+  assert.equal(h.window.__hrtechRepairSocket, replacement);
+  checkedReply(old, { requestId: request.requestId });
+  assert.equal(h.window.__hrtechRepairBusy, true);
+  checkedReply(replacement, request);
+  assert.equal(h.note(), 'Связь с файлом подтверждена. Умение поиска установлено.');
+  assert.equal(h.window.__hrtechRepairBusy, false);
+  assert.equal(other.readyState, 1);
+  assert.equal(other.sent.filter(m => m.type === 'HRTECH_REPAIR').length, 0);
+});
+
+test('repair cannot rebind to another client or file and its overall deadline ignores late success', async () => {
+  for (const mismatch of ['client', 'file']) {
+    const h = repairHarness(); finishScan(h.sockets.slice()); await settleClient();
+    const old = h.sockets[0]; helloCheckedBridge(old);
+    h.repair(); old.close(); h.advance(1000);
+    const replacement = h.sockets.findLast(s => s.url.endsWith(':9223'));
+    replacement.open(); await settleClient();
+    if (mismatch === 'file') h.window.__wsGetActiveConnections()[0].fileKey = 'other-file';
+    replacement.message({ type: 'SERVER_HELLO', data: { hrtechVersion: '4.33', repairCheck: true, fileRegistrationAck: true,
+      bridgeProtocol: 1, mcpClient: { name: mismatch === 'client' ? 'Claude Code' : 'Codex' }, skills: searchSkills } });
+    replacement.message({ type: 'FILE_REGISTERED', data: { fileKey: mismatch === 'file' ? 'other-file' : 'test-file' } });
+    assert.equal(checkRequest(replacement), undefined, mismatch);
+    assert.equal(h.window.__hrtechRepairSocket, old, mismatch);
+    h.advance(89000);
+    assert.equal(h.window.__hrtechRepairBusy, false, mismatch);
+    assert.match(h.note(), /Восстановление не подтверждено/);
+    old.message({ type: 'HRTECH_REPAIR_RESULT', data: { finished: true, ok: true, skills: searchSkills } });
+    assert.match(h.note(), /Восстановление не подтверждено/);
+  }
+});
+
+async function repairHandover(h) {
+  finishScan(h.sockets.slice()); await settleClient();
+  const old = h.sockets[0]; helloCheckedBridge(old);
+  h.repair(); old.close(); h.advance(1000);
+  const socket = h.sockets.findLast(s => s.url.endsWith(':9223'));
+  socket.open(); await settleClient(); helloCheckedBridge(socket);
+  return { old, socket };
+}
+
+test('a replacement engine retries temporary missing client or skill without replaying repair', async () => {
+  for (const temporary of [{ client: null, skillAvailable: false }, { skillAvailable: false }]) {
+    const h = repairHarness();
+    const { old, socket } = await repairHandover(h);
+    const first = checkRequest(socket);
+    checkedReply(socket, first, temporary);
+    assert.equal(h.window.__hrtechRepairBusy, true);
+    assert.doesNotMatch(h.note(), /Связь с файлом подтверждена.*Умение поиска установлено/);
+    h.advance(1499);
+    assert.equal(checkRequest(socket), first);
+    h.advance(1);
+    const second = checkRequest(socket);
+    assert.notEqual(second.requestId, first.requestId);
+    checkedReply(socket, first);
+    assert.equal(h.window.__hrtechRepairBusy, true, 'the old request cannot finish the retry');
+    checkedReply(socket, second);
+    assert.equal(h.note(), 'Связь с файлом подтверждена. Умение поиска установлено.');
+    assert.equal(h.window.__hrtechRepairBusy, false);
+    assert.equal(old.sent.filter(m => m.type === 'HRTECH_REPAIR').length, 1);
+    assert.equal(socket.sent.filter(m => m.type === 'HRTECH_REPAIR').length, 0);
+  }
+});
+
+test('handover retries end at the original repair deadline and late positive replies cannot claim success', async () => {
+  const h = repairHarness(); const { socket } = await repairHandover(h);
+  let request = checkRequest(socket);
+  checkedReply(socket, request, { skillAvailable: false });
+  for (let i = 0; i < 59; i++) {
+    h.advance(1500);
+    const next = checkRequest(socket);
+    assert.notEqual(next.requestId, request.requestId);
+    request = next;
+    checkedReply(socket, request, { skillAvailable: false });
+    assert.equal(h.window.__hrtechRepairBusy, true);
+  }
+  h.advance(500);
+  assert.equal(h.window.__hrtechRepairBusy, false);
+  assert.match(h.note(), /Восстановление не подтверждено.*умение поиска для Codex/);
+  const count = socket.sent.filter(m => m.type === 'HRTECH_CHECK_CONNECTION').length;
+  h.advance(10000); checkedReply(socket, request);
+  assert.equal(socket.sent.filter(m => m.type === 'HRTECH_CHECK_CONNECTION').length, count);
+  assert.doesNotMatch(h.note(), /Связь с файлом подтверждена.*Умение поиска установлено/);
+});
+
+test('an already successful legacy EXECUTE_CODE establishes proof only after a local matching file read', async () => {
+  let executed = 0, identified = 0;
+  const h = repairHarness({ sendPluginCommand(method) {
+    if (method === 'EXECUTE_CODE') { executed++; return Promise.resolve({ success: true, result: 'existing work' }); }
+    if (method === 'GET_FILE_INFO') { identified++; return Promise.resolve({ success: true, fileInfo: { fileKey: 'test-file' } }); }
+    throw new Error('Unexpected plugin method: ' + method);
+  } });
+  finishScan(h.sockets.slice()); await settleClient();
+  const socket = h.sockets[0]; helloLegacy(socket);
+  assert.equal(identified, 1);
+  assert.equal(h.window.__wsGetActiveConnections()[0].legacyFileVerified, undefined);
+  socket.message({ id: 'existing-command', method: 'EXECUTE_CODE', params: { code: 'already requested by assistant' } });
+  await settleClient();
+  assert.equal(executed, 1, 'the UI must never execute an extra command to manufacture proof');
+  assert.equal(identified, 2);
+  assert.equal(socket.sent.find(m => m.id === 'existing-command').result.success, true);
+  assert.equal(h.window.__wsGetActiveConnections()[0].legacyFileVerified, true);
+  assert.equal(h.context.hrtechAssistantNames().length, 0);
+});
+
+test('failed legacy execution or a changed/disconnected file cannot acquire proof from a late local read', async () => {
+  for (const scenario of ['execute-failed', 'mismatch', 'read-failed', 'closed']) {
+    let reads = 0, resolveRead;
+    const h = repairHarness({ sendPluginCommand(method) {
+      if (method === 'EXECUTE_CODE') return Promise.resolve({ success: scenario !== 'execute-failed' });
+      reads++;
+      if (reads === 1) return Promise.resolve({ success: true, fileInfo: { fileKey: 'test-file' } });
+      return new Promise(resolve => { resolveRead = resolve; });
+    } });
+    finishScan(h.sockets.slice()); await settleClient();
+    const socket = h.sockets[0]; helloLegacy(socket);
+    const conn = h.window.__wsGetActiveConnections()[0];
+    socket.message({ id: 'existing-command', method: 'EXECUTE_CODE', params: {} });
+    await settleClient();
+    if (scenario === 'execute-failed') assert.equal(reads, 1);
+    else {
+      if (scenario === 'closed') socket.close();
+      resolveRead({ success: scenario !== 'read-failed', fileInfo: { fileKey: scenario === 'mismatch' ? 'other-file' : 'test-file' } });
+      await settleClient();
+    }
+    assert.equal(!!conn.legacyFileVerified, false, scenario);
+    assert.doesNotMatch(h.report(), /Обмен с файлом: подтверждён/);
+  }
 });
