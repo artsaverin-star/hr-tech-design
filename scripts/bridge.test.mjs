@@ -68,7 +68,8 @@ test('setup wires the bridge and knowledge for every supported agent', () => {
     // Сама регистрация MCP живёт в connect-mcp.sh — её зовут и setup.sh, и кнопка «Обновить».
     assert.match(setupSource, /scripts\/connect-mcp\.sh/);
     assert.match(connectMcpSource, /"\$CODEX_BIN" mcp add figma-hrtech/);
-    assert.match(connectMcpSource, /"\$CLAUDE_BIN" mcp add figma-hrtech -s user/);
+    assert.match(connectMcpSource, /configure-claude-desktop\.mjs" --client cli/);
+    assert.doesNotMatch(connectMcpSource, /"\$CLAUDE_BIN" mcp remove/);
     // Официальный установщик Codex CLI кладёт бинарь в ~/.local/bin — без этого пути
     // установка молча пропускает Codex и дизайнер остаётся без моста.
     assert.match(agentPathsSource, /\$HOME\/\.local\/bin\/codex/);
@@ -87,7 +88,8 @@ test('setup wires the bridge and knowledge for every supported agent', () => {
         assert.match(source, /scripts\/agent-paths\.sh/);
     }
     assert.match(linkKnowledgeSource, /CODEX_SKILLS_ROOT="\$HOME\/\.agents\/skills"/);
-    assert.match(linkKnowledgeSource, /CLAUDE_SKILLS_ROOT="\$HOME\/\.claude\/skills"/);
+    assert.match(linkKnowledgeSource, /CLAUDE_CONFIG_ROOT="\$\{CLAUDE_CONFIG_DIR:-\$HOME\/\.claude\}"/);
+    assert.match(linkKnowledgeSource, /CLAUDE_SKILLS_ROOT="\$CLAUDE_CONFIG_ROOT\/skills"/);
     assert.match(linkKnowledgeSource, /CLAUDE_COMMANDS_ROOT\/hrtech\.md"/);
 });
 

@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { bootstrapPackage } from './bootstrap-package.mjs';
 const root=fileURLToPath(new URL('..',import.meta.url));
 function write(file,data,executable=false){fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,data,{mode:executable?0o755:0o644});}
 function fixture(t) {
@@ -65,3 +66,24 @@ for(const extra of [{FIXTURE_DOWNLOAD_FAIL:'1'},{FIXTURE_ARCHIVE_FAIL:'1'},{FIXT
 test('an unrelated directory is never overwritten',t=>{const f=fixture(t);write(path.join(f.target,'keep.txt'),'user work');const r=run(f);stopped(r);assert.equal(fs.readFileSync(path.join(f.target,'keep.txt'),'utf8'),'user work');assert.doesNotMatch(r.calls,/setup:/);});
 test('setup failure is retryable and never prints success',t=>{const f=fixture(t);stopped(run(f,{FIXTURE_SETUP_FAIL:'1'}));assert.equal(JSON.parse(fs.readFileSync(path.join(f.target,'.bulochka-install.json'))).configurationStatus,'incomplete');assert.equal(run(f).status,0);});
 test('a tampered package fails before target creation',t=>{const f=fixture(t);fs.appendFileSync(path.join(f.source,'runtime/bin/engine.mjs'),'tampered');const r=run(f);stopped(r);assert.equal(fs.existsSync(f.target),false);});
+
+test('first runtime copy failure leaves an owned incomplete installation that the same command repairs', t => {
+ const f=fixture(t),copy=fs.copyFileSync;
+ fs.copyFileSync=function(from,to,...args){if(to===path.join(f.target,'runtime/node/LICENSE'))throw new Error('simulated ENOSPC');return copy(from,to,...args);};
+ try{assert.throws(()=>bootstrapPackage(f.source,f.target,path.join(f.dir,'node')),/ENOSPC/);}
+ finally{fs.copyFileSync=copy;}
+ const marker=JSON.parse(fs.readFileSync(path.join(f.target,'.bulochka-install.json'),'utf8'));
+ assert.equal(marker.configurationStatus,'incomplete');
+ assert.equal(fs.existsSync(path.join(f.target,'.bulochka-update.lock')),false);
+ const retry=run(f);assert.equal(retry.status,0,retry.all);
+ assert.equal(JSON.parse(fs.readFileSync(path.join(f.target,'.bulochka-install.json'),'utf8')).configurationStatus,'ready');
+});
+
+test('failure to save the first ownership marker leaves no unowned installation directory', t => {
+ const f=fixture(t),rename=fs.renameSync;
+ fs.renameSync=function(from,to){if(to===path.join(f.target,'.bulochka-install.json'))throw new Error('simulated marker failure');return rename(from,to);};
+ try{assert.throws(()=>bootstrapPackage(f.source,f.target,path.join(f.dir,'node')),/marker failure/);}
+ finally{fs.renameSync=rename;}
+ assert.equal(fs.existsSync(f.target),false);
+ const retry=run(f);assert.equal(retry.status,0,retry.all);
+});

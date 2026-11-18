@@ -14,7 +14,7 @@ const executable = ts.transpileModule(`(async function() {${source.slice(start, 
 
 // Run the production startup path with a fake socket binder. Never bind ports,
 // inspect other processes, or modify the user's port advertisements in tests.
-async function startup(outcomes, { evict = false } = {}) {
+async function startup(outcomes, { evict = false, recovery } = {}) {
   const attempted = [], advertised = [];
   let evictions = 0, orphanScans = 0;
   const state = { wsServer: null, wsActualPort: null, wsStartupError: null };
@@ -31,8 +31,9 @@ async function startup(outcomes, { evict = false } = {}) {
     Error, process: { env: {} }, DEFAULT_WS_PORT: 9223,
     getPortRange: port => Array.from({ length: 10 }, (_, i) => port + i),
     FigmaWebSocketServer: Server,
-    cleanupStalePortFiles() {}, cleanupOrphanedProcesses() { orphanScans++; return 0; },
-    evictOldestInstance() { evictions++; return evict; },
+    cleanupStalePortFiles() { recovery?.cleanupStalePortFiles(); },
+    cleanupOrphanedProcesses() { orphanScans++; return recovery?.cleanupOrphanedProcesses() ?? 0; },
+    evictOldestInstance() { evictions++; return recovery?.evictOldestInstance() ?? evict; },
     advertisePort(port) { advertised.push(port); }, registerPortCleanup() {},
     refreshPortAdvertisement() {}, HEARTBEAT_INTERVAL_MS: 30000,
     setInterval() { return { unref() {} }; },
@@ -104,4 +105,129 @@ test('normal and permission-denied startup never run slow process scans before M
     assert.equal((await startup(outcomes)).orphanScans, 0);
   }
   assert.equal((await startup(['EADDRINUSE'])).orphanScans, 1);
+});
+
+const portSource = fs.readFileSync(new URL('../src/core/port-discovery.ts', import.meta.url), 'utf8');
+const portExecutable = ts.transpileModule(portSource, {
+  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
+}).outputText;
+
+// Execute the real cleanup/recovery module with an in-memory filesystem and PID
+// table. Even a regression that attempts SIGTERM cannot signal a real process.
+function portHarness(entries, processStates = {}) {
+  const files = new Map(entries.map(data => [`/fixture/figma-console-mcp-${data.port}.json`, JSON.stringify(data)]));
+  const states = new Map(Object.entries(processStates).map(([pid, state]) => [Number(pid), state]));
+  const signals = [], commands = [], intervals = [];
+  const exports = {};
+  const childProcess = {
+    execSync(command) {
+      commands.push(command);
+      if (command.startsWith('lsof ')) return '100\n';
+      if (command.includes('command=')) return 'node /fixture/dist/local.js';
+      if (command.includes('etime=')) return '00:10:00';
+      if (command === 'sleep 0.5') return '';
+      throw new Error(`Unexpected command: ${command}`);
+    },
+  };
+  const modules = {
+    fs: {
+      existsSync: file => files.has(file),
+      readFileSync(file) {
+        if (!files.has(file)) throw Object.assign(new Error('missing fixture'), { code: 'ENOENT' });
+        return files.get(file);
+      },
+      writeFileSync: (file, data) => files.set(file, data),
+      unlinkSync: file => files.delete(file),
+      readdirSync: () => [...files.keys()].map(file => file.split('/').at(-1)),
+    },
+    path: { join: (...parts) => parts.join('/') },
+    os: { tmpdir: () => '/fixture' },
+    './logger.js': { createChildLogger: () => ({ info() {}, warn() {}, debug() {} }) },
+    child_process: childProcess,
+  };
+  vm.runInNewContext(portExecutable, {
+    exports,
+    require(name) {
+      assert.ok(name in modules, `unexpected module ${name}`);
+      return modules[name];
+    },
+    process: {
+      pid: 999, platform: 'darwin',
+      kill(pid, signal) {
+        signals.push({ pid, signal });
+        const state = states.get(pid) || 'dead';
+        if (state !== 'alive') throw Object.assign(new Error(state), { code: state === 'dead' ? 'ESRCH' : state });
+        if (signal !== 0) states.set(pid, 'dead');
+      },
+    },
+    Date, SharedArrayBuffer, Int32Array, Atomics: { wait() {} },
+    setInterval(fn) { const timer = { fn, unref() {} }; intervals.push(timer); return timer; },
+    clearInterval(timer) { timer.canceled = true; },
+  });
+  return { api: exports, files, signals, commands, intervals };
+}
+
+function advertisement(port, pid, { heartbeatAge = 0, startedAge = 600000, legacy = false } = {}) {
+  return {
+    port, pid, host: 'localhost', startedAt: new Date(Date.now() - startedAge).toISOString(),
+    ...(!legacy ? { lastSeen: new Date(Date.now() - heartbeatAge).toISOString() } : {}),
+  };
+}
+
+test('late heartbeats after sleep and old legacy sessions never authorize termination', () => {
+  const h = portHarness([
+    advertisement(9223, 100, { heartbeatAge: 600000 }),
+    advertisement(9224, 101, { legacy: true, startedAge: 86400000 }),
+  ], { 100: 'alive', 101: 'alive' });
+  assert.equal(h.api.cleanupStalePortFiles(), 0);
+  assert.equal(h.files.size, 2);
+  assert.equal(h.api.discoverActiveInstances().length, 2);
+  assert.deepEqual(h.signals.filter(({ signal }) => signal !== 0), []);
+});
+
+test('cleanup removes confirmed dead metadata and preserves an owner that rejects PID checks', () => {
+  const h = portHarness([
+    advertisement(9223, 100), advertisement(9224, 101), advertisement(9225, 102),
+  ], { 100: 'dead', 101: 'EPERM', 102: 'alive' });
+  assert.equal(h.api.cleanupStalePortFiles(), 1);
+  assert.equal(h.files.has('/fixture/figma-console-mcp-9223.json'), false);
+  assert.equal(h.api.readPortFile(9224).pid, 101);
+  assert.equal(h.api.readPortFile(9225).pid, 102);
+  assert.deepEqual(h.signals.filter(({ signal }) => signal !== 0), []);
+});
+
+test('a missing advertisement does not authorize terminating a live listener', () => {
+  const h = portHarness([], { 100: 'alive' });
+  assert.equal(h.api.cleanupOrphanedProcesses(), 0);
+  assert.equal(h.api.evictOldestInstance(), false);
+  assert.deepEqual(h.signals, []);
+  assert.deepEqual(h.commands, []);
+});
+
+test('periodic cleanup after wake preserves a sleeping sibling and removes exited metadata', () => {
+  const h = portHarness([
+    advertisement(9223, 100, { heartbeatAge: 600000 }), advertisement(9224, 101),
+  ], { 100: 'alive', 101: 'dead' });
+  const stop = h.api.startPeriodicReaper();
+  h.intervals[0].fn();
+  assert.equal(h.files.has('/fixture/figma-console-mcp-9223.json'), true);
+  assert.equal(h.files.has('/fixture/figma-console-mcp-9224.json'), false);
+  assert.deepEqual(h.signals.filter(({ signal }) => signal !== 0), []);
+  assert.deepEqual(h.commands, []);
+  stop();
+  assert.equal(h.intervals[0].canceled, true);
+});
+
+test('an eleventh bridge reports the occupied range and preserves all ten live sessions', async () => {
+  const entries = Array.from({ length: 10 }, (_, i) => advertisement(9223 + i, 100 + i));
+  const h = portHarness(entries, Object.fromEntries(entries.map(({ pid }) => [pid, 'alive'])));
+  const { state, attempted, advertised } = await startup(['EADDRINUSE'], { recovery: h.api });
+  assert.equal(attempted.length, 10);
+  assert.equal(state.wsServer, null);
+  assert.equal(state.wsStartupError.code, 'EADDRINUSE');
+  assert.equal(state.wsStartupError.message, 'All ports in range 9223-9232 are in use');
+  assert.deepEqual(advertised, []);
+  assert.equal(h.files.size, 10);
+  assert.deepEqual(h.signals.filter(({ signal }) => signal !== 0), []);
+  assert.deepEqual(h.commands, []);
 });

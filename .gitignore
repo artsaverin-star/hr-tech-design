@@ -3,3 +3,7 @@ node_modules/
 .DS_Store
 /tmp/
 dist/
+
+# Personal Figma catalog and local release acceptance artifacts
+hrtech-figma-catalog/
+bulochka-v4-31/

@@ -18,7 +18,10 @@ readline.createInterface({input:process.stdin}).on('line', line=>{
  else if(m.method==='tools/call') {
    if(m.params.name==='figma_pin_file') reply(m.id,{content:[{type:'text',text:JSON.stringify({status:'pinned',pinnedFileKey:m.params.arguments.fileKey})}]});
    else if(m.params.name==='figma_unpin_file') reply(m.id,{content:[{type:'text',text:JSON.stringify({status:'unpinned'})}]});
-   else setTimeout(()=>reply(m.id,{version,pin:process.env.BULOCHKA_SESSION_FILE_KEY,client}),m.params.arguments?.delay||0);
+   else {
+     console.log(JSON.stringify({jsonrpc:'2.0',method:'fixture/work_started',params:{id:m.id,version}}));
+     setTimeout(()=>reply(m.id,{version,pin:process.env.BULOCHKA_SESSION_FILE_KEY,client}),m.params.arguments?.delay||0);
+   }
  } else if(m.method==='ping') reply(m.id,{version,pin:process.env.BULOCHKA_SESSION_FILE_KEY,client});
 });`;
 }
@@ -30,14 +33,14 @@ async function fixture(t) {
   fs.writeFileSync(runner, `import {startSupervisor} from ${JSON.stringify('file://' + supervisor)};startSupervisor({engine:${JSON.stringify(engine)},pollMs:25});`);
   const child = spawn(process.execPath, [runner], { stdio: ['pipe', 'pipe', 'pipe'] });
   let buffer = '', nextId = 1;
-  const responses = new Map(), notices = [], errors = [];
+  const responses = new Map(), received = [], notices = [], errors = [];
   child.stderr.on('data', c => errors.push(c.toString()));
   child.stdout.on('data', c => {
     buffer += c;
     let pos;
     while ((pos = buffer.indexOf('\n')) >= 0) {
       const m = JSON.parse(buffer.slice(0,pos)); buffer=buffer.slice(pos+1);
-      if(m.id!==undefined) responses.set(m.id,m); else notices.push(m);
+      if(m.id!==undefined) { responses.set(m.id,m); received.push(m); } else notices.push(m);
     }
   });
   const send = m => child.stdin.write(JSON.stringify({jsonrpc:'2.0',...m})+'\n');
@@ -61,7 +64,7 @@ async function fixture(t) {
   const result = await request('initialize',{clientInfo:{name:'Codex',version:'test'},capabilities:{},protocolVersion:'2024-11-05'});
   assert.equal(result.result.serverInfo.version,'1');
   send({method:'notifications/initialized'});
-  return {child,engine,request,send,notices,until, update(version){fs.writeFileSync(engine,engineSource(version));}};
+  return {child,engine,request,send,received,notices,until, update(version){fs.writeFileSync(engine,engineSource(version));}};
 }
 test('engine update keeps the same stdio connection and repeats the original client handshake',async t=>{
  const f=await fixture(t); const pid=f.child.pid;
@@ -72,10 +75,14 @@ test('engine update keeps the same stdio connection and repeats the original cli
 test('an in-flight command finishes once on the old engine before reload',async t=>{
  const f=await fixture(t);
  const pending=f.request('tools/call',{name:'work',arguments:{delay:250}});
+ // A pipe write alone does not prove that the supervisor accepted the request.
+ // Updating before this acknowledgement can legitimately route queued work to v2.
+ await f.until(()=>f.notices.some(m=>m.method==='fixture/work_started' && m.params.version==='1'));
  f.update('2'); const response=await pending;
  assert.equal(response.result.version,'1');
- await f.until(()=>f.notices.length>0);
+ await f.until(()=>f.notices.some(m=>m.method==='notifications/tools/list_changed'));
  assert.equal((await f.request('ping')).result.version,'2');
+ assert.equal(f.received.filter(m=>m.id===response.id).length,1);
 });
 test('session pin survives engine replacement and compare-and-release is respected',async t=>{
  const f=await fixture(t);

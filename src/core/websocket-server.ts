@@ -113,7 +113,7 @@ try {
 
 // Bulochka feature version — держать в синхроне с globalThis.hrtechVersion в code.js.
 // Плагин сравнивает свою версию с этой; при расхождении показывает кнопку «Починить».
-const HRTECH_VERSION = '4.30';
+const HRTECH_VERSION = '4.31';
 
 function getHrtechDistribution(): 'app' | 'terminal' | 'git' {
   try {
@@ -231,6 +231,8 @@ export class FigmaWebSocketServer extends EventEmitter {
   private httpServer: HttpServer | null = null;
   /** Named clients indexed by fileKey — each represents a connected Figma file */
   private clients: Map<string, ClientConnection> = new Map();
+  /** Replaced sockets may still deliver frames while their close handshake drains. */
+  private retiredClients = new WeakSet<WebSocket>();
   /** Clients awaiting FILE_INFO identification, mapped to their pending timeout */
   private _pendingClients: Map<WebSocket, ReturnType<typeof setTimeout>> = new Map();
   /** The fileKey of the currently active (targeted) file */
@@ -398,6 +400,7 @@ export class FigmaWebSocketServer extends EventEmitter {
                 serverVersion: SERVER_VERSION,
                 hrtechVersion: HRTECH_VERSION,
                 bridgeProtocol: 1,
+                fileRegistrationAck: true,
                 mcpClient: this.mcpClient,
                 distribution: getHrtechDistribution(),
                 figmaToken: !!process.env.FIGMA_ACCESS_TOKEN,
@@ -474,6 +477,7 @@ export class FigmaWebSocketServer extends EventEmitter {
    * Handle incoming message from a plugin UI WebSocket connection
    */
   private handleMessage(message: any, ws: WebSocket): void {
+    if (ws.readyState !== WebSocket.OPEN || this.retiredClients.has(ws)) return;
     // Response to a command we sent
     if (message.id && this.pendingRequests.has(message.id)) {
       const pending = this.pendingRequests.get(message.id)!;
@@ -718,6 +722,7 @@ export class FigmaWebSocketServer extends EventEmitter {
   }
 
   private handleFileInfo(data: any, ws: WebSocket): void {
+    if (ws.readyState !== WebSocket.OPEN || this.retiredClients.has(ws)) return;
     const fileKey = data.fileKey || null;
 
     if (!fileKey) {
@@ -756,6 +761,7 @@ export class FigmaWebSocketServer extends EventEmitter {
     const existing = this.clients.get(fileKey);
     if (existing && existing.ws !== ws) {
       logger.info({ fileKey }, 'Replacing existing connection for same file');
+      this.retiredClients.add(existing.ws);
       if (existing.gracePeriodTimer) {
         clearTimeout(existing.gracePeriodTimer);
       }
@@ -779,7 +785,12 @@ export class FigmaWebSocketServer extends EventEmitter {
         editorType: data.editorType || 'figma',
         connectedAt: Date.now(),
       },
-      selection: existing?.selection || null,
+      selection: Array.isArray(data.selection) ? {
+        nodes: data.selection,
+        count: typeof data.selectionCount === 'number' ? data.selectionCount : data.selection.length,
+        page: data.currentPage || '',
+        timestamp: Date.now(),
+      } : existing?.selection || null,
       documentChanges: existing?.documentChanges || [],
       metadataChanges: existing?.metadataChanges || [],
       consoleLogs: existing?.consoleLogs || [],
@@ -794,6 +805,10 @@ export class FigmaWebSocketServer extends EventEmitter {
     if (!this._pinnedFileKey || this._pinnedFileKey === fileKey) {
       this._activeFileKey = fileKey;
     }
+
+    // Additive protocol message: older plugins ignore it and keep working.
+    // The new UI can distinguish an identified bridge from a registered file.
+    try { ws.send(JSON.stringify({ type: 'FILE_REGISTERED', data: { fileKey, fileName: data.fileName } })); } catch {}
 
     logger.info(
       {

@@ -99,8 +99,9 @@ if [ -n "${CLAUDE_DESKTOP_APP:-}" ]; then
     FAILED=1
   fi
 elif [ -n "$CLAUDE_BIN" ]; then
-  "$CLAUDE_BIN" mcp remove figma-hrtech -s user >/dev/null 2>&1 || true
-  if RESULT="$("$CLAUDE_BIN" mcp add figma-hrtech -s user ${ENV_ARGS[@]+"${ENV_ARGS[@]}"} -- "$NODE_BIN" "$SERVER" 2>&1)"; then
+  # Use the same atomic user-scope writer for standalone CLI installs. Removing
+  # first loses a working entry if the subsequent add cannot save its config.
+  if RESULT="$("$NODE_BIN" "$DIR/scripts/configure-claude-desktop.mjs" --client cli --node "$NODE_BIN" --server "$SERVER" --token-file "$TOKEN_FILE" 2>&1)"; then
     CONNECTED="${CONNECTED:+$CONNECTED, }Claude Code"
   else
     report_failure "Claude Code" "$RESULT"

@@ -24,11 +24,12 @@ their common protocol. Edit source files in this repo, never generated user-scop
 ## Skills (load on demand, unlike the two files above)
 
 `claude/skills/<name>/SKILL.md` — исходники умений HR Tech. Имя каталога историческое. Установка
-экспонирует эти директории помощнику дизайнера как локальные skills (Codex — `~/.codex/skills`,
+экспонирует эти директории помощнику дизайнера как локальные skills (Codex — `~/.agents/skills`,
 Claude Code — `~/.claude/skills`); помощник сначала видит имя и `description`, а полный `SKILL.md`
 загружает только при совпадении задачи или явном вызове по имени.
 Относительные ссылки всегда разрешаются от директории конкретного умения.
 
+- **`hrtech-figma-search`** — поиск файлов, страниц, экранов и текстов Figma по личному локальному каталогу; данные каталога не входят в публичный релиз.
 - **`hrtech-spec`** — сборка спеки-борда сценариев: грамматика в цифрах, ромбы, веер, гребёнка,
   светофор статуса, три канонические формы conn-вектора, аудит связности после перекладки.
 - **`hrtech-mobile`** — десктоп → мобилка 375: каркас и честный вьюпорт, карта «десктопный элемент →
@@ -88,62 +89,46 @@ Claude Code — `~/.claude/skills`); помощник сначала видит 
 
 1. Edit `claude/commands/hrtech.md` (shared task rules),
    `claude/commands/hrds-knowledge.md` (component/pattern reference) or the relevant skill.
-2. Bump the version в **ТРЁХ** файлах И **пересобрать бандл** — иначе приложение навсегда покажет «Починить движок»:
-   - `figma-desktop-bridge/code.js` (`hrtechVersion`)
-   - `figma-desktop-bridge/ui.html` (`hrtech-ver-badge`, `HRTECH_UI_VERSION`)
-   - `src/core/websocket-server.ts` (`HRTECH_VERSION`)
-   - (сторож `scripts/check-plugin-ui.mjs` сверяет номер с ожидаемым — поправь и его, иначе `npm run check:plugin-ui` падает)
-   - **`npm run build:server`** → `runtime/bin/bridge.mjs` **коммитится в репо**: у дизайнеров тулчейна нет,
-     они запускают именно этот файл. Правка в `src/` без пересборки до них НЕ доедет.
-
-   Приложение сравнивает версию моста из `SERVER_HELLO` со своей — расхождение зажигает баннер. Забыть
-   пересборку хуже, чем забыть бамп: «Починить движок» делает `git pull` + перезапуск и подтягивает
-   всё тот же старый бандл, то есть баннер становится неизлечимым.
-3. Installed skills are symlinks back to the versioned source directories in this repo (`scripts/link-knowledge.sh`
-   links every `claude/skills/*` into both `~/.codex/skills` and `~/.claude/skills`, plus the commands and
-   knowledge files into `~/.claude/commands`); do not maintain a second hand-copied source. Keep the
-   historical `claude/` paths until a deliberate migration updates every reference and installer together.
-   **Since 4.13 that linking runs only from `setup.sh` and from «Обновить» (`scripts/repair.sh`)** — the
-   login-time LaunchAgent that used to relink on every boot is gone. A new skill therefore does NOT reach a
-   designer by `git pull` alone: they must press «Обновить» (or run `./setup.sh`). Say so when you ship one.
+2. Keep the Bulochka version aligned in `figma-desktop-bridge/code.js` (`hrtechVersion`),
+   `figma-desktop-bridge/ui.html` (badge and `HRTECH_UI_VERSION`),
+   `src/core/websocket-server.ts` (`HRTECH_VERSION`) and `scripts/check-plugin-ui.mjs`.
+   Rebuild with `npm run build:server`: commit `runtime/bin/engine.mjs` and the regenerated
+   `update-manifest.json`. Designers run `runtime/bin/bridge.mjs`, a stable supervisor
+   that loads the bundled engine and applies verified package updates between commands.
+3. `scripts/link-knowledge.sh` exposes versioned skills to each installed agent. Setup and
+   package repair refresh these links; pulling source files alone does not install a new skill.
+   Respect `CODEX_HOME` and `CLAUDE_CONFIG_DIR`. Keep source in `claude/skills/` and
+   each designer's Figma catalog outside the package (`~/.hrtech/figma-catalog/` by default).
+   Never put scanned Figma metadata, text or indexes in the public repository or manifest.
 4. When the user approves a new screen type, distill it into a numeric BLUEPRINT in the rules (components by
    library key + spacing + order). Do NOT save references to canvas nodes — the system must stay file-independent.
 
-## Build (only when changing the bridge server source)
+## Build
 
 ```bash
-npm run build:server   # esbuild → runtime/bin/bridge.mjs — ЭТОТ файл коммитится и едет дизайнерам
-npm run build:local    # tsc → dist/local.js — локальная отладка, dist/ в .gitignore
+npm run build:server   # esbuild → runtime/bin/engine.mjs + update-manifest.json
+npm run build:local    # TypeScript → dist/local.js, for local debugging
+npm test
+npm run check:plugin-ui
 ```
 
-Правка в `src/` доезжает до дизайнеров ТОЛЬКО через `build:server` и коммит `runtime/bin/bridge.mjs`.
-Не нужно ни для правок Figma-приложения (`figma-desktop-bridge/`), ни для правок правил и знаний.
+Rebuild the engine after server changes, and regenerate the manifest after changes to any
+shipped package file. Validate the actual manifest payload when changing installation or skills.
 
 ## Distribution
 
-`install.sh` provisions Node.js when needed and installs Codex CLI only if no supported agent is found
-(a designer who already runs Claude Code must not get a second agent silently), then clones the repo and
-calls `setup.sh`. `setup.sh` connects the ready `runtime/bin/bridge.mjs` as the `figma-hrtech` MCP server
-for **whichever supported agents are installed** (Codex and/or Claude Code), links the versioned HR Tech
-skills into their skill directories and asks for the optional personal Figma token
-(`~/.hrtech/figma-token`). Updating or repairing refreshes those MCP and skill links from this repo.
+`install.sh` downloads a verified package and private Node runtime into
+`~/Library/Application Support/Bulochka`, then configures installed Codex and/or Claude Code.
+It requires neither system Node, Git nor Homebrew. It does not install another assistant.
+`setup.sh` and `scripts/repair.sh` both call `scripts/connect-mcp.sh` and refresh skill links.
+The optional personal Figma token stays in `~/.hrtech/figma-token`.
 
-**MCP registration lives in `scripts/connect-mcp.sh`, and BOTH `setup.sh` and `scripts/repair.sh` call it.**
-The single most common designer breakage is «помощник не видит мост» — no `[mcp_servers.figma-hrtech]`
-section in `~/.codex/config.toml`, or a section pointing at another clone / a `node` path that no longer
-exists. Until 4.21 only `setup.sh` could fix that, i.e. only the terminal; the «Обновить» button did
-`git pull` + skill relinking and left the bridge unconnected. Keep that call in `repair.sh`: the button is
-the only repair path a designer who «only types in chat» can reach. `connect-mcp.sh` resolves `node`,
-`codex` and `claude` by known install paths too, because `repair.sh` runs from the bridge process with a
-minimal PATH, and it deliberately avoids `set -u` (macOS ships bash 3.2, where `"${ARR[@]}"` on an empty
-array aborts). Note the propagation lag: a designer sitting on an older `repair.sh` gets the new files on
-the first press and the actual reconnect on the second.
+The «Обновить» button uses `scripts/repair.sh`; a newer published Figma plugin can also
+update an older packaged bridge. The supervisor preserves MCP and file pins across engine
+switches. A developer checkout is not silently updated. Setup and repair also remove the
+obsolete task-queue LaunchAgent from installations predating 4.13.
 
-Nothing runs in the background. The old queue dispatcher and its `design.hrtech.bulochka.runner`
-LaunchAgent were deleted in 4.13; `setup.sh` and `scripts/repair.sh` bootout the label, delete the leftover
-plist and kill any surviving `hrtech-watch.sh` / `hrtech-driver.mjs` process, so machines with an old
-installation are cleaned up on the next update. `scripts/repair.sh` is the path the «Обновить» button takes
-(`src/core/websocket-server.ts` runs it), so migrations for designers must live there.
-
-Plugin import: Figma → Plugins → Development → Import from `figma-desktop-bridge/manifest.json`.
-See `ONBOARDING.md` (designers) and `HRDS-CONTRIBUTION.md` (how to extend HRDS itself).
+GitHub `main` distributes the local bridge and skills. Publishing the Figma plugin is a
+separate release through Figma Desktop, using `figma-desktop-bridge/manifest.json`.
+Designers run **Plugins → From Yandex → Bulochka**; development import is for maintainers.
+See `ONBOARDING.md` for installation and `HRDS-CONTRIBUTION.md` for extending HRDS.
