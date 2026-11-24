@@ -66,7 +66,7 @@ if ! run_logged "$NODE_BIN" "$SOURCE/scripts/bootstrap-package.mjs" "$SOURCE" "$
   tail -n 3 "$INSTALL_LOG" >&2
   fail "пакет не прошёл проверку или место установки занято."
 fi
-printf '[3/3] Настраиваю Codex, Claude и умения HR Tech…\n'
+printf '[3/3] Настраиваю помощников (Codex, Claude, Antigravity, Cursor) и умения HR Tech…\n'
 if ! BULOCHKA_INSTALLER=1 bash "$INSTALL_DIR/setup.sh" >> "$INSTALL_LOG" 2>&1; then
   tail -n 10 "$INSTALL_LOG" >&2
   fail "настройка помощника не завершилась. Файлы сохранены; повторная команда восстановит настройку."

@@ -4,7 +4,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { configureClaudeDesktop } from './configure-claude-desktop.mjs';
+import { configureClaudeDesktop, configureAntigravity, configureCursor, configureCodexToml } from './configure-claude-desktop.mjs';
 
 const project = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const fixturesRoot = path.join(project, 'bulochka-v4-26', 'tests');
@@ -206,4 +206,46 @@ test('connect-mcp configures desktop-only Claude without executing a CLI or a re
   assert.equal(result.status, 0, result.stderr + result.stdout);
   assert.match(result.stdout, /Claude Code/);
   assert.equal(f.read().mcpServers['figma-hrtech'].args[0], path.join(runtime, 'bridge.mjs'));
+});
+
+test('configureAntigravity writes ~/.gemini/config/mcp_config.json and updates legacy override if present', t => {
+  const f = fixture(t);
+  const primary = path.join(f.home, '.gemini', 'config', 'mcp_config.json');
+  const legacy = path.join(f.home, '.gemini', 'antigravity', 'mcp_config.json');
+  f.write(primary, { mcpServers: { other: { command: '/bin/other' } } });
+  f.write(legacy, { mcpServers: { 'figma-hrtech': { command: '/old/node', args: ['/old/bridge.mjs'] }, keep: { command: '/bin/keep' } } });
+  const result = configureAntigravity(f.options);
+  assert.equal(result.configured, true);
+  assert.equal(result.legacyOverrideUpdated, true);
+  const saved = f.read(primary);
+  assert.deepEqual(saved.mcpServers.other, { command: '/bin/other' });
+  assert.deepEqual(saved.mcpServers['figma-hrtech'], { command: f.options.nodePath, args: [f.serverPath] });
+  const savedLegacy = f.read(legacy);
+  assert.deepEqual(savedLegacy.mcpServers.keep, { command: '/bin/keep' });
+  assert.deepEqual(savedLegacy.mcpServers['figma-hrtech'], { command: f.options.nodePath, args: [f.serverPath] });
+});
+
+test('configureCursor writes ~/.cursor/mcp.json preserving unrelated servers', t => {
+  const f = fixture(t);
+  const target = path.join(f.home, '.cursor', 'mcp.json');
+  f.write(target, { mcpServers: { custom: { command: '/bin/custom' } } });
+  configureCursor(f.options);
+  const saved = f.read(target);
+  assert.deepEqual(saved.mcpServers.custom, { command: '/bin/custom' });
+  assert.deepEqual(saved.mcpServers['figma-hrtech'], { command: f.options.nodePath, args: [f.serverPath] });
+});
+
+test('configureCodexToml upserts figma-hrtech section while preserving unrelated TOML config', t => {
+  const f = fixture(t);
+  const codexHome = path.join(f.home, '.codex');
+  const configToml = path.join(codexHome, 'config.toml');
+  fs.mkdirSync(codexHome, { recursive: true });
+  fs.writeFileSync(configToml, 'model = "o3"\n\n[mcp_servers.figma-hrtech]\ncommand = "/old"\nargs = ["/old.mjs"]\n\n[mcp_servers.other]\ncommand = "/bin/other"\n');
+  configureCodexToml({ ...f.options, codexHome });
+  const text = fs.readFileSync(configToml, 'utf8');
+  assert.match(text, /model = "o3"/);
+  assert.match(text, /\[mcp_servers\.other\]\ncommand = "\/bin\/other"/);
+  assert.equal((text.match(/\[mcp_servers\.figma-hrtech\]/g) || []).length, 1);
+  assert.ok(text.includes(`command = ${JSON.stringify(f.options.nodePath)}`));
+  assert.ok(text.includes(`args = [${JSON.stringify(f.serverPath)}]`));
 });

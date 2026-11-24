@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-// Claude Code's desktop Code tab reads the same user-scope MCP entry as the CLI.
-// Keep the rest of its config intact; never print config contents or credentials.
+// Atomic, backup-preserving MCP configuration writer for supported local assistants:
+// Claude Code (Desktop & CLI), Antigravity, Cursor, and Codex TOML fallback.
+// Keeps unrelated config intact; never prints config contents or credentials.
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -10,7 +11,20 @@ import { fileURLToPath } from 'node:url';
 const SERVER_NAME = 'figma-hrtech';
 const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 
-function readConfig(file) {
+function validateRuntimePaths(nodePath, serverPath) {
+  if (!path.isAbsolute(nodePath || '') || !path.isAbsolute(serverPath || '')) {
+    throw new Error('Для Node.js и моста нужны абсолютные пути.');
+  }
+  try {
+    fs.accessSync(nodePath, fs.constants.X_OK);
+    fs.accessSync(serverPath, fs.constants.R_OK);
+    if (!fs.statSync(nodePath).isFile() || !fs.statSync(serverPath).isFile()) throw new Error();
+  } catch {
+    throw new Error('Node.js или готовый мост недоступен. Повторите установку полного пакета Булочки.');
+  }
+}
+
+function readJsonConfig(file) {
   let raw;
   try {
     const stat = fs.lstatSync(file);
@@ -48,33 +62,7 @@ function currentContents(file) {
   }
 }
 
-export function configureClaudeDesktop({ home = os.homedir(), nodePath, serverPath, tokenPath, configDir = process.env.CLAUDE_CONFIG_DIR, client = 'desktop' } = {}) {
-  if (!['desktop', 'cli'].includes(client)) throw new Error('Неизвестный клиент Claude.');
-  if (client === 'desktop' && configDir) {
-    throw new Error('Задан отдельный CLAUDE_CONFIG_DIR. Автонастройка Claude Desktop поддерживает стандартный каталог; существующие настройки не изменены.');
-  }
-  if (!path.isAbsolute(nodePath || '') || !path.isAbsolute(serverPath || '')) {
-    throw new Error('Для Node.js и моста нужны абсолютные пути.');
-  }
-  try {
-    fs.accessSync(nodePath, fs.constants.X_OK);
-    fs.accessSync(serverPath, fs.constants.R_OK);
-    if (!fs.statSync(nodePath).isFile() || !fs.statSync(serverPath).isFile()) throw new Error();
-  } catch {
-    throw new Error('Node.js или готовый мост недоступен. Повторите установку полного пакета Булочки.');
-  }
-  const token = readOptionalToken(tokenPath);
-  const entry = { type: 'stdio', command: nodePath, args: [serverPath], env: token ? { FIGMA_ACCESS_TOKEN: token } : {} };
-  // An explicit CLAUDE_CONFIG_DIR moves CLI state to that directory, even when
-  // its value happens to be ~/.claude. Desktop profiles remain explicit-only.
-  const user = readConfig(path.join(client === 'cli' && configDir ? path.resolve(configDir) : home, '.claude.json'));
-  // Desktop gives its legacy chat config precedence over the user-scope entry.
-  // Update only an existing entry there; do not silently add a chat integration.
-  const targets = [user];
-  if (client === 'desktop') {
-    const legacy = readConfig(path.join(home, 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json'));
-    if (Object.hasOwn(legacy.data.mcpServers || {}, SERVER_NAME)) targets.push(legacy);
-  }
+function commitJsonTargets(targets, entry, clientLabel) {
   const prepared = [];
   const committed = [];
   try {
@@ -94,14 +82,12 @@ export function configureClaudeDesktop({ home = os.homedir(), nodePath, serverPa
       fs.writeFileSync(temporary, output, { flag: 'wx', mode: 0o600 });
     }
     for (const target of prepared) {
-      // Do not overwrite a config that the running desktop app has just changed.
+      // Do not overwrite a config that a running desktop app has just changed.
       if (currentContents(target.file) !== target.raw) throw new Error('concurrent-config-change');
       fs.renameSync(target.temporary, target.file);
       committed.push(target);
     }
   } catch {
-    // The two files cannot be renamed together. Roll back only our own exact
-    // content, leaving any newer write by Claude untouched. Backups remain private.
     for (const target of committed.reverse()) {
       try {
         if (currentContents(target.file) !== target.output) continue;
@@ -112,13 +98,132 @@ export function configureClaudeDesktop({ home = os.homedir(), nodePath, serverPa
         }
       } catch { /* a private backup is still available */ }
     }
-    throw new Error('Не удалось сохранить настройки Claude. Закройте Claude полностью и повторите установку.');
+    throw new Error(`Не удалось сохранить настройки ${clientLabel}. Закройте ${clientLabel} полностью и повторите установку.`);
   } finally {
     for (const target of prepared) {
       try { fs.unlinkSync(target.temporary); } catch { /* renamed or already removed */ }
     }
   }
   return { configured: true, legacyOverrideUpdated: targets.length > 1, changedFiles: prepared.length };
+}
+
+export function configureClaudeDesktop({ home = os.homedir(), nodePath, serverPath, tokenPath, configDir = process.env.CLAUDE_CONFIG_DIR, client = 'desktop' } = {}) {
+  if (!['desktop', 'cli'].includes(client)) throw new Error('Неизвестный клиент Claude.');
+  if (client === 'desktop' && configDir) {
+    throw new Error('Задан отдельный CLAUDE_CONFIG_DIR. Автонастройка Claude Desktop поддерживает стандартный каталог; существующие настройки не изменены.');
+  }
+  validateRuntimePaths(nodePath, serverPath);
+  const token = readOptionalToken(tokenPath);
+  const entry = { type: 'stdio', command: nodePath, args: [serverPath], env: token ? { FIGMA_ACCESS_TOKEN: token } : {} };
+  // An explicit CLAUDE_CONFIG_DIR moves CLI state to that directory, even when
+  // its value happens to be ~/.claude. Desktop profiles remain explicit-only.
+  const user = readJsonConfig(path.join(client === 'cli' && configDir ? path.resolve(configDir) : home, '.claude.json'));
+  // Desktop gives its legacy chat config precedence over the user-scope entry.
+  // Update only an existing entry there; do not silently add a chat integration.
+  const targets = [user];
+  if (client === 'desktop') {
+    const legacy = readJsonConfig(path.join(home, 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json'));
+    if (Object.hasOwn(legacy.data.mcpServers || {}, SERVER_NAME)) targets.push(legacy);
+  }
+  return commitJsonTargets(targets, entry, 'Claude');
+}
+
+export function configureAntigravity({ home = os.homedir(), nodePath, serverPath, tokenPath } = {}) {
+  validateRuntimePaths(nodePath, serverPath);
+  const token = readOptionalToken(tokenPath);
+  const entry = { command: nodePath, args: [serverPath], ...(token ? { env: { FIGMA_ACCESS_TOKEN: token } } : {}) };
+  const primary = readJsonConfig(path.join(home, '.gemini', 'config', 'mcp_config.json'));
+  const targets = [primary];
+  // Update legacy Antigravity IDE location too if it already contains our entry.
+  const legacyPath = path.join(home, '.gemini', 'antigravity', 'mcp_config.json');
+  if (fs.existsSync(legacyPath)) {
+    const legacy = readJsonConfig(legacyPath);
+    if (Object.hasOwn(legacy.data.mcpServers || {}, SERVER_NAME)) targets.push(legacy);
+  }
+  return commitJsonTargets(targets, entry, 'Antigravity');
+}
+
+export function configureCursor({ home = os.homedir(), nodePath, serverPath, tokenPath } = {}) {
+  validateRuntimePaths(nodePath, serverPath);
+  const token = readOptionalToken(tokenPath);
+  const entry = { command: nodePath, args: [serverPath], ...(token ? { env: { FIGMA_ACCESS_TOKEN: token } } : {}) };
+  const primary = readJsonConfig(path.join(home, '.cursor', 'mcp.json'));
+  return commitJsonTargets([primary], entry, 'Cursor');
+}
+
+function tomlString(value) {
+  return JSON.stringify(String(value));
+}
+
+function upsertCodexTomlSection(raw, nodePath, serverPath, token) {
+  const lines = raw ? raw.replace(/\r\n/g, '\n').split('\n') : [];
+  const kept = [];
+  let skipping = false;
+  const headerRe = /^\s*\[([^\]]+)\]\s*(?:#.*)?$/;
+  const ownSectionRe = /^mcp_servers\.(?:figma-hrtech|"figma-hrtech"|'figma-hrtech')(?:\.|$)/;
+  for (const line of lines) {
+    const match = line.match(headerRe);
+    if (match) {
+      const sectionName = match[1].trim();
+      if (ownSectionRe.test(sectionName)) {
+        skipping = true;
+        continue;
+      }
+      skipping = false;
+    }
+    if (!skipping) kept.push(line);
+  }
+  while (kept.length > 0 && kept[kept.length - 1].trim() === '') kept.pop();
+  const block = [
+    `[mcp_servers.${SERVER_NAME}]`,
+    `command = ${tomlString(nodePath)}`,
+    `args = [${tomlString(serverPath)}]`,
+    'enabled = true',
+  ];
+  if (token) {
+    block.push('', `[mcp_servers.${SERVER_NAME}.env]`, `FIGMA_ACCESS_TOKEN = ${tomlString(token)}`);
+  }
+  const prefix = kept.length > 0 ? kept.join('\n') + '\n\n' : '';
+  return prefix + block.join('\n') + '\n';
+}
+
+export function configureCodexToml({ home = os.homedir(), codexHome = process.env.CODEX_HOME, nodePath, serverPath, tokenPath } = {}) {
+  validateRuntimePaths(nodePath, serverPath);
+  const token = readOptionalToken(tokenPath);
+  const file = path.join(codexHome ? path.resolve(codexHome) : path.join(home, '.codex'), 'config.toml');
+  let raw = null;
+  try {
+    const stat = fs.lstatSync(file);
+    if (!stat.isFile() || stat.isSymbolicLink()) {
+      throw new Error('Настройка config.toml должна быть обычным файлом. Существующий файл не изменён.');
+    }
+    raw = fs.readFileSync(file, 'utf8');
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      if (error.message.startsWith('Настройка ')) throw error;
+      throw new Error('Не удалось прочитать config.toml Codex. Существующие настройки не изменены.');
+    }
+  }
+  const output = upsertCodexTomlSection(raw, nodePath, serverPath, token);
+  if (output === raw) {
+    fs.chmodSync(file, 0o600);
+    return { configured: true, changedFiles: 0 };
+  }
+  const suffix = randomUUID();
+  const temporary = `${file}.bulochka-${suffix}.tmp`;
+  const backup = raw === null ? null : `${file}.bulochka-backup-${suffix}`;
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  try {
+    if (backup) fs.writeFileSync(backup, raw, { flag: 'wx', mode: 0o600 });
+    fs.writeFileSync(temporary, output, { flag: 'wx', mode: 0o600 });
+    if (currentContents(file) !== raw) throw new Error('concurrent-config-change');
+    fs.renameSync(temporary, file);
+  } catch {
+    throw new Error('Не удалось сохранить настройки Codex. Закройте Codex и повторите установку.');
+  } finally {
+    try { fs.unlinkSync(temporary); } catch {}
+  }
+  return { configured: true, changedFiles: 1 };
 }
 
 if (process.argv[1] && fs.realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
@@ -130,8 +235,20 @@ if (process.argv[1] && fs.realpathSync(process.argv[1]) === fileURLToPath(import
       if (!names[args[i]] || !args[i + 1]) throw new Error('Нужны параметры --node, --server и необязательный --token-file.');
       options[names[args[i]]] = args[i + 1];
     }
-    const result = configureClaudeDesktop(options);
-    console.log('Claude Code: настройка моста сохранена.' + (result.legacyOverrideUpdated ? ' Существующая запись Claude Desktop тоже обновлена.' : ''));
+    const client = options.client || 'desktop';
+    if (client === 'antigravity') {
+      const result = configureAntigravity(options);
+      console.log('Antigravity: настройка моста сохранена.' + (result.legacyOverrideUpdated ? ' Прежний файл конфигурации тоже обновлён.' : ''));
+    } else if (client === 'cursor') {
+      configureCursor(options);
+      console.log('Cursor: настройка моста сохранена.');
+    } else if (client === 'codex-toml') {
+      configureCodexToml(options);
+      console.log('Codex: настройка моста сохранена в config.toml.');
+    } else {
+      const result = configureClaudeDesktop(options);
+      console.log('Claude Code: настройка моста сохранена.' + (result.legacyOverrideUpdated ? ' Существующая запись Claude Desktop тоже обновлена.' : ''));
+    }
   } catch (error) {
     // Errors above contain only our own messages, never JSON or secret values.
     console.error(error.message);

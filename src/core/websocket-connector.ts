@@ -79,21 +79,9 @@ export class WebSocketConnector implements IFigmaConnector {
   }
 
   async executeCodeViaUI(code: string, timeoutMs = 5000, fileKey?: string): Promise<any> {
-    // HR TECH flight recorder
-    const fs = await import('node:fs');
-    const preview = code.replace(/\s+/g, ' ').slice(0, 350);
+    const preview = code.replace(/\s+/g, ' ').slice(0, 160);
     const t0 = Date.now();
-    try {
-      fs.appendFileSync('/tmp/hrtech-exec.log', `${new Date().toISOString()} START ${preview}\n`);
-    } catch {}
-    const done = (tag: string) => {
-      try {
-        fs.appendFileSync(
-          '/tmp/hrtech-exec.log',
-          `${new Date().toISOString()} ${tag} ${Date.now() - t0}ms ${preview.slice(0, 80)}\n`,
-        );
-      } catch {}
-    };
+    logger.debug({ fileKey, timeoutMs, preview }, 'Executing code via Figma UI');
     try {
       const r = await this.wsServer.sendCommand(
         'EXECUTE_CODE',
@@ -101,10 +89,10 @@ export class WebSocketConnector implements IFigmaConnector {
         timeoutMs + 2000,
         fileKey,
       );
-      done('DONE');
+      logger.debug({ fileKey, durationMs: Date.now() - t0 }, 'Executed code via Figma UI');
       return r;
     } catch (e) {
-      done('FAIL');
+      logger.debug({ fileKey, durationMs: Date.now() - t0, error: e instanceof Error ? e.message : String(e) }, 'Failed to execute code via Figma UI');
       throw e;
     }
   }

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "version": "4.33",
+  "version": "5.0.0",
   "files": [
     {
       "path": "runtime/bin/bridge.mjs",
@@ -8,15 +8,15 @@
     },
     {
       "path": "runtime/bin/engine.mjs",
-      "sha256": "317ac988a4a5ebee9a5f6cdd1a1069b5bace92a2f7bf009f05e1a47b45c2fb66"
+      "sha256": "6aeb9d62504ebbaf1fae6d070345c2d050a4df09c20a689f63af93d05ddd216d"
     },
     {
       "path": "runtime/bin/supervisor.mjs",
-      "sha256": "4b0c3db05b10004093c6960091a26f24efd514412b0b78b2f1cf746c0e82d18f"
+      "sha256": "5cc0198596efe570cc808030dc664e2596dd23f46dd28ea8263c12d75b688c2e"
     },
     {
       "path": "scripts/agent-paths.sh",
-      "sha256": "23e54982698280c3bb965d75f16707c5b7ad7bed4f672f2315b8c53aaa59ee9d"
+      "sha256": "5ef25b3fb0d262d403d4ed87affcf2fa769451246ffc1e3440d8c78b0dade006"
     },
     {
       "path": "scripts/bootstrap-package.mjs",
@@ -24,11 +24,11 @@
     },
     {
       "path": "scripts/configure-claude-desktop.mjs",
-      "sha256": "3a6d54311ad4e31f303cb0e1ccf90b1460f38a87b175ff7362cc04f4bf5d39b2"
+      "sha256": "6587320e78ef4567698d0426fe46f308acc35ac2a13604b8540339f1ef63c09d"
     },
     {
       "path": "scripts/connect-mcp.sh",
-      "sha256": "46632793e2181e7d0f2f094230afd21e37911caa7ddfb022de211b32b605b09a"
+      "sha256": "06fcd60b1eb100807e264b2b4b36e045132a7cfa7cc495d4ed3a38728aa184a9"
     },
     {
       "path": "scripts/diagnose-mcp.mjs",
@@ -36,15 +36,15 @@
     },
     {
       "path": "scripts/install-next-steps.sh",
-      "sha256": "99dcbc3cc07017e0c2bcc9c23d3e40cf984af9de5f13dea370d92f47f7bf4c2f"
+      "sha256": "ffcaf222b67e39b0fbd4b4ea1402f21169a7fa62a95f7b7209787841774e6dd2"
     },
     {
       "path": "scripts/link-knowledge.sh",
-      "sha256": "f4b766f9486370229db1417e0c453bd00906749569e67b485c054cba467c8e2d"
+      "sha256": "f4e22742e3789d1155c5d903a93fd212614d17ccbca32e6a30bf80755ce12970"
     },
     {
       "path": "scripts/repair.sh",
-      "sha256": "721d40ad4789debdd3141f631d4d7600789770648fa10f5edd0379b4eadbebbc"
+      "sha256": "a9164dd1cd2eb2a768bd7c414814b7fdedde41f8c4c31db48e626abfaefdbb71"
     },
     {
       "path": "scripts/update-package.mjs",
@@ -52,7 +52,7 @@
     },
     {
       "path": "claude/skills/hrtech/SKILL.md",
-      "sha256": "377836737a50704d6e67aaf7027556190b715c19ad6dcab785a95764b211770b"
+      "sha256": "c9d46b9748223be3765629ad8d4d55d152ed590e106183f7d270153c4140fb40"
     },
     {
       "path": "claude/skills/hrtech-arcadia/SKILL.md",
@@ -199,6 +199,42 @@
       "sha256": "dca48f691f35c77c8fc39fe49fe9923c25b07833b67188712a523ca8d6994849"
     },
     {
+      "path": "claude/skills/hrtech-yteam/SKILL.md",
+      "sha256": "f99d6fe452cf45262ee8a05acd528bac7aa5bb9c9c508d31df9db9cd07b3f08e"
+    },
+    {
+      "path": "claude/skills/hrtech-yteam/references/app-map.md",
+      "sha256": "0b9048c0ffea3047f0c1467b2d9b4c2724084d31979972109794159530c91994"
+    },
+    {
+      "path": "claude/skills/hrtech-yteam/references/calendar-people.md",
+      "sha256": "02193b0f0bb895c79ab8e3eeca6ea6204ad27f26b16146a1ca7e232e3ef5f28b"
+    },
+    {
+      "path": "claude/skills/hrtech-yteam/references/case-study-v5-2026-11.md",
+      "sha256": "255b3e0589fddcb65feefddc0cac734db6d64c8e03ebeae37c9db58bc4e05375"
+    },
+    {
+      "path": "claude/skills/hrtech-yteam/references/home-search.md",
+      "sha256": "0a3cba96d7dd13249c8508d2a880fdc6da3154271a7c6f2afc982d90395f6de4"
+    },
+    {
+      "path": "claude/skills/hrtech-yteam/references/integration.md",
+      "sha256": "9fd106cfa4163f45b39cc6b184e888e9175c3bdc7d763d258938c5b5d7d2ec89"
+    },
+    {
+      "path": "claude/skills/hrtech-yteam/references/meetings-ai.md",
+      "sha256": "7bdc744387bb36125e07c4bd3e4ccfcb1cd5ac1e470e32fa25e22f74e5c3f189"
+    },
+    {
+      "path": "claude/skills/hrtech-yteam/references/services-shell.md",
+      "sha256": "b05789da0eb5cf2d86405507cea1ddbe7b4dc54c23151e2dae8db434351da389"
+    },
+    {
+      "path": "claude/skills/hrtech-yteam/references/sources-and-coverage.md",
+      "sha256": "707a41c55d8f8b2ee4aa625095e7a3548b0a1316299fd4fab04788f470a77a1f"
+    },
+    {
       "path": "claude/commands/hrds-knowledge.md",
       "sha256": "9d5b312708e23240728594df6a294b36cadf02190fe7e9f6c42e740ac8a67bd5"
     },
@@ -216,7 +252,7 @@
     },
     {
       "path": "figma-desktop-bridge/code.js",
-      "sha256": "ec935f6ce7c0935da1d989080288f61d0e667b5e2d8a39cc272e3fc2e712759d"
+      "sha256": "d569f1c71dcf530704014961ead8ee141bbc5405546610d38df62f5bb7aaf2bf"
     },
     {
       "path": "figma-desktop-bridge/manifest.json",
@@ -224,15 +260,15 @@
     },
     {
       "path": "figma-desktop-bridge/ui.html",
-      "sha256": "aba152d96d9cb25a2ab30e786de0e4937a14db704e035318d2aedde4415d79a9"
+      "sha256": "36ccc73b3771f884049db11ce1bd128b3cc9f5245919b76b9308f96e3127cd7c"
     },
     {
       "path": "setup.sh",
-      "sha256": "baef4d7fb5e7f1a227daf4fc59987ba93232a5bddb229487094a2b8364efedbb"
+      "sha256": "ca092e15ed281e8498329cdcb61f930c8c1bc262b584044ad7880182ddbfcc07"
     },
     {
       "path": "package.json",
-      "sha256": "aade9f9a8911707641fecd5786440c63fcce2e96a22307edd26f0ae41ff17cac"
+      "sha256": "8047d14dea6401732fb28e6b2dfb25898e128cc1d040641595dc929dc1f66d65"
     },
     {
       "path": "LICENSE",

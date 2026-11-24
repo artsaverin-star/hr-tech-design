@@ -3,7 +3,15 @@ node_modules/
 .DS_Store
 /tmp/
 dist/
-
+# Reproducible native installer outputs and dependency caches.
+/bulochka-v4-26/installer/arm64/
+/bulochka-v4-26/installer/x86_64/
+/bulochka-v4-26/installer/universal/
+/bulochka-v4-26/installer/cache/
+/bulochka-v4-26/installer/module-cache/
+/bulochka-v4-26/installer/preview-build/
+/bulochka-v4-26/installer/actual-payload-smoke/case-*/
+/bulochka-v4-26/signing/
 # Personal Figma catalog and local release acceptance artifacts
 hrtech-figma-catalog/
 bulochka-v4-31/

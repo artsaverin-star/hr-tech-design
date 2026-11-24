@@ -30,7 +30,7 @@ async function fixture(t) {
   const engine = path.join(dir, 'engine.mjs');
   fs.writeFileSync(engine, engineSource('1'));
   const runner = path.join(dir, 'runner.mjs');
-  fs.writeFileSync(runner, `import {startSupervisor} from ${JSON.stringify('file://' + supervisor)};startSupervisor({engine:${JSON.stringify(engine)},pollMs:25});`);
+  fs.writeFileSync(runner, `import {startSupervisor} from ${JSON.stringify('file://' + supervisor)};startSupervisor({engine:${JSON.stringify(engine)},lockDir:${JSON.stringify(dir)},pollMs:25});`);
   const child = spawn(process.execPath, [runner], { stdio: ['pipe', 'pipe', 'pipe'] });
   let buffer = '', nextId = 1;
   const responses = new Map(), received = [], notices = [], errors = [];
@@ -64,7 +64,7 @@ async function fixture(t) {
   const result = await request('initialize',{clientInfo:{name:'Codex',version:'test'},capabilities:{},protocolVersion:'2024-11-05'});
   assert.equal(result.result.serverInfo.version,'1');
   send({method:'notifications/initialized'});
-  return {child,engine,request,send,received,notices,until, update(version){fs.writeFileSync(engine,engineSource(version));}};
+  return {dir,child,engine,request,send,received,notices,until, update(version){fs.writeFileSync(engine,engineSource(version));}};
 }
 test('engine update keeps the same stdio connection and repeats the original client handshake',async t=>{
  const f=await fixture(t); const pid=f.child.pid;
@@ -75,8 +75,6 @@ test('engine update keeps the same stdio connection and repeats the original cli
 test('an in-flight command finishes once on the old engine before reload',async t=>{
  const f=await fixture(t);
  const pending=f.request('tools/call',{name:'work',arguments:{delay:250}});
- // A pipe write alone does not prove that the supervisor accepted the request.
- // Updating before this acknowledgement can legitimately route queued work to v2.
  await f.until(()=>f.notices.some(m=>m.method==='fixture/work_started' && m.params.version==='1'));
  f.update('2'); const response=await pending;
  assert.equal(response.result.version,'1');
@@ -106,4 +104,32 @@ test('two assistants keep independent file locks across the same update',async t
  await b.request('tools/call',{name:'figma_pin_file',arguments:{fileKey:'B'}});
  a.update('2'); b.update('2'); await Promise.all([a.until(()=>a.notices.length),b.until(()=>b.notices.length)]);
  assert.equal((await a.request('ping')).result.pin,'A'); assert.equal((await b.request('ping')).result.pin,'B');
+});
+test('active repair lock defers engine reload until repair finishes and stale dead-PID lock is ignored',async t=>{
+ const f=await fixture(t);
+ const lock=path.join(f.dir,'.bulochka-repair.lock');
+ fs.mkdirSync(lock);
+ fs.writeFileSync(path.join(lock,'owner.json'),JSON.stringify({pid:process.pid}));
+ f.update('2');
+ await new Promise(r=>setTimeout(r,120));
+ assert.equal((await f.request('ping')).result.version,'1','live repair lock must hold reload');
+ // Simulate a crashed repair (dead PID): supervisor must ignore stale lock and reload.
+ fs.writeFileSync(path.join(lock,'owner.json'),JSON.stringify({pid:2147483647}));
+ await f.until(()=>f.notices.some(m=>m.method==='notifications/tools/list_changed'));
+ assert.equal((await f.request('ping')).result.version,'2');
+});
+test('bundled engine exits cleanly on stdin EOF instead of leaking its WebSocket port',async()=>{
+ const engineBundle = fileURLToPath(new URL('../runtime/bin/engine.mjs', import.meta.url));
+ const child = spawn(process.execPath, [engineBundle], {
+   stdio: ['pipe', 'pipe', 'pipe'],
+   env: { ...process.env, LOG_LEVEL: 'error' },
+ });
+ child.stderr.resume(); child.stdout.resume();
+ const exited = new Promise((resolve, reject) => {
+   const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('engine leaked after stdin EOF')); }, 4000);
+   child.once('exit', (code, signal) => { clearTimeout(timer); resolve({ code, signal }); });
+ });
+ setTimeout(() => child.stdin.end(), 150);
+ const result = await exited;
+ assert.equal(result.code, 0);
 });

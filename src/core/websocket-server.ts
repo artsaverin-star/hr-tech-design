@@ -17,29 +17,33 @@ import { WebSocketServer as WSServer, WebSocket } from 'ws';
 import { EventEmitter } from 'events';
 import { createServer as createHttpServer, IncomingMessage, ServerResponse } from 'http';
 import type { Server as HttpServer } from 'http';
-import { readFileSync, mkdirSync, writeFileSync, accessSync, constants as fsConstants } from 'fs';
+import { readFileSync, mkdirSync, writeFileSync, unlinkSync, accessSync, constants as fsConstants } from 'fs';
 import { join, delimiter } from 'path';
 import { homedir } from 'os';
 import { spawn } from 'child_process';
 import { readdirSync } from 'fs';
 
 /**
- * Установленные скилы — для панели «Настройки» в виджете. Скилы срабатывают сами,
- * поэтому дизайнер не знает ни что они есть, ни какими словами их звать: показываем
- * имя и примеры фраз. Читаем пользовательские каталоги поддерживаемых помощников;
- * ~/.agents/skills — текущий каталог Codex, остальные поддержаны для старых установок.
- * Читается один раз на процесс: файлов единицы, но SERVER_HELLO шлётся на каждый коннект.
+ * Установленные скилы — для панели «Настройки» в виджете. Читаем пользовательские
+ * каталоги всех поддерживаемых помощников (Codex, Claude Code, Antigravity, Cursor).
+ * Короткий TTL-кэш (5 с) не тормозит SERVER_HELLO и сразу подхватывает обновления из Терминала.
  */
 let _skillsCache: Array<{ name: string; examples: string[] }> | null = null;
+let _skillsCacheAt = 0;
 function readInstalledSkills(): Array<{ name: string; examples: string[] }> {
-  if (_skillsCache) return _skillsCache;
+  const now = Date.now();
+  if (_skillsCache && (now - _skillsCacheAt) < 5000) return _skillsCache;
   const out: Array<{ name: string; examples: string[] }> = [];
   const seen = new Set<string>();
+  const home = homedir();
   const roots = [
-    join(homedir(), '.agents', 'skills'),
-    join(process.env.CODEX_HOME || join(homedir(), '.codex'), 'skills'),
-    join(homedir(), '.claude', 'skills'),
+    join(home, '.agents', 'skills'),
+    join(process.env.CODEX_HOME || join(home, '.codex'), 'skills'),
+    join(home, '.claude', 'skills'),
     ...(process.env.CLAUDE_CONFIG_DIR ? [join(process.env.CLAUDE_CONFIG_DIR, 'skills')] : []),
+    join(home, '.gemini', 'config', 'skills'),
+    join(home, '.gemini', 'config', 'plugins', 'bulochka', 'skills'),
+    join(home, '.cursor', 'skills'),
   ];
   for (const root of roots) {
     let directories: string[];
@@ -63,6 +67,7 @@ function readInstalledSkills(): Array<{ name: string; examples: string[] }> {
     }
   }
   _skillsCache = out;
+  _skillsCacheAt = now;
   return out;
 }
 
@@ -71,11 +76,20 @@ function readInstalledSkills(): Array<{ name: string; examples: string[] }> {
 function isFigmaSearchSkillAvailable(client: { name: string; version: string } | null): boolean {
   if (!client || typeof client.name !== 'string') return false;
   const name = client.name.trim().toLowerCase().replace(/[\s_]+/g, '-');
+  const home = homedir();
   let roots: string[];
   if (['codex', 'codex-mcp-client', 'codex-cli', 'codex-cli-rs', 'codex-desktop'].includes(name)) {
-    roots = [join(homedir(), '.agents', 'skills'), join(process.env.CODEX_HOME || join(homedir(), '.codex'), 'skills')];
+    roots = [join(home, '.agents', 'skills'), join(process.env.CODEX_HOME || join(home, '.codex'), 'skills')];
   } else if (['claude-code', 'claudecode'].includes(name)) {
-    roots = [join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'skills')];
+    roots = [join(process.env.CLAUDE_CONFIG_DIR || join(home, '.claude'), 'skills')];
+  } else if (['antigravity', 'antigravity-client', 'antigravity-ide', 'antigravity-cli', 'agy', 'jetski', 'gemini-code-assist'].includes(name)) {
+    roots = [
+      join(home, '.gemini', 'config', 'skills'),
+      join(home, '.gemini', 'config', 'plugins', 'bulochka', 'skills'),
+      join(home, '.agents', 'skills'),
+    ];
+  } else if (['cursor', 'cursor-vscode', 'cursor-agent'].includes(name)) {
+    roots = [join(home, '.cursor', 'skills'), join(home, '.agents', 'skills')];
   } else {
     return false;
   }
@@ -89,25 +103,32 @@ function isFigmaSearchSkillAvailable(client: { name: string; version: string } |
   });
 }
 
+function hasReadableDirectory(dir: string): boolean {
+  try { readdirSync(dir); return true; } catch { return false; }
+}
+
 /**
- * Ищем помощника на диске по имени бинаря. Виджет показывает «Нашла на компьютере»
- * для ОБОИХ помощников, поэтому одной проверки codex мало: карточка «Помощник»
- * обещает «и Codex CLI, и Claude Code» — значит и искать надо оба.
- * PATH + пользовательские места установки каждого из них.
+ * Ищем поддерживаемых помощников на диске (Codex, Claude Code, Antigravity, Cursor).
+ * Учитываем PATH, стандартные пути macOS и актуальное расположение встроенных CLI.
  */
-function findLocalAgentBinary(name: 'codex' | 'claude'): string | null {
+function findLocalAgentBinary(name: 'codex' | 'claude' | 'agy' | 'cursor'): string | null {
   const home = homedir();
   const candidates = (process.env.PATH || '').split(delimiter).filter(Boolean).map((dir) => join(dir, name));
-  candidates.push(join(home, '.local', 'bin', name));
+  candidates.push(join(home, '.local', 'bin', name), join('/opt/homebrew/bin', name), join('/usr/local/bin', name));
   if (name === 'codex') {
     for (const applications of ['/Applications', join(home, 'Applications')]) {
       for (const app of ['Codex.app', 'ChatGPT.app']) {
         candidates.push(join(applications, app, 'Contents', 'Resources', 'codex'));
+        candidates.push(join(applications, app, 'Contents', 'Resources', 'codex-cli', 'CodexCLI.app', 'Contents', 'MacOS', 'codex'));
       }
     }
-  } else {
+  } else if (name === 'claude') {
     // локальная установка Claude Code (`claude migrate-installer`)
     candidates.push(join(home, '.claude', 'local', 'claude'));
+  } else if (name === 'cursor') {
+    for (const applications of ['/Applications', join(home, 'Applications')]) {
+      candidates.push(join(applications, 'Cursor.app', 'Contents', 'Resources', 'app', 'bin', 'cursor'));
+    }
   }
   for (const candidate of candidates) {
     try { accessSync(candidate, fsConstants.X_OK); return candidate; } catch { /* keep looking */ }
@@ -115,12 +136,20 @@ function findLocalAgentBinary(name: 'codex' | 'claude'): string | null {
   return null;
 }
 
-function findLocalClaudeDesktopApp(): string | null {
+function findLocalAppBundle(appName: string, executableName: string): string | null {
   for (const applications of ['/Applications', join(homedir(), 'Applications')]) {
-    const app = join(applications, 'Claude.app');
-    try { accessSync(join(app, 'Contents', 'MacOS', 'Claude'), fsConstants.X_OK); return app; } catch { /* keep looking */ }
+    const app = join(applications, appName);
+    try { accessSync(join(app, 'Contents', 'MacOS', executableName), fsConstants.X_OK); return app; } catch { /* keep looking */ }
   }
   return null;
+}
+
+function findLocalClaudeDesktopApp(): string | null {
+  return findLocalAppBundle('Claude.app', 'Claude');
+}
+
+function redactSecrets(text: string): string {
+  return text.replace(/\bfig[a-z]?_[A-Za-z0-9_-]{8,}\b/g, '[токен скрыт]');
 }
 import { createChildLogger } from './logger.js';
 import { PACKAGE_ROOT } from './resolve-package-root.js';
@@ -135,9 +164,9 @@ try {
   // Non-critical — version will show as 0.0.0
 }
 
-// Bulochka feature version — держать в синхроне с globalThis.hrtechVersion в code.js.
-// Плагин сравнивает свою версию с этой; при расхождении показывает кнопку «Починить».
-const HRTECH_VERSION = '4.33';
+// Bulochka feature version — единый источник правды: bulochka.version.json.
+// Плагин сравнивает свою версию с этой; при расхождении запускает обновление.
+const HRTECH_VERSION = '5.0.0';
 
 function getHrtechDistribution(): 'app' | 'terminal' | 'git' {
   try {
@@ -241,9 +270,10 @@ export class FigmaWebSocketServer extends EventEmitter {
     this._pinSource = 'tool';
   }
 
-  private mcpClient: { name: string; version: string } | null = null;
+  private mcpClient: { name: string; version: string; title?: string } | null = null;
+  private _repairRunning = false;
 
-  setMcpClient(client: { name: string; version: string } | null): void {
+  setMcpClient(client: { name: string; version: string; title?: string } | null): void {
     this.mcpClient = client;
     if (!this.wss) return;
     const message = JSON.stringify({ type: 'HRTECH_MCP_STATUS', data: { client } });
@@ -431,6 +461,7 @@ export class FigmaWebSocketServer extends EventEmitter {
                 distribution: getHrtechDistribution(),
                 figmaToken: !!process.env.FIGMA_ACCESS_TOKEN,
                 skills: readInstalledSkills(),
+                pinnedFileKey: this._pinnedFileKey,
                 startedAt: this._startedAt,
               },
             }));
@@ -527,7 +558,7 @@ export class FigmaWebSocketServer extends EventEmitter {
         void this.checkHrtechConnection(message.requestId, ws);
         return;
       }
-      // Bulochka: plugin asks whether this designer's local Codex is available.
+      // Bulochka: plugin asks which local assistants are available.
       if (message.type === 'HRTECH_HOST_STATUS_REQUEST') {
         this.collectHrtechHostStatus()
           .then((data) => { try { ws.send(JSON.stringify({ type: 'HRTECH_HOST_STATUS', data })); } catch {} })
@@ -535,32 +566,54 @@ export class FigmaWebSocketServer extends EventEmitter {
         return;
       }
 
-      // «Обновить»: подтянуть свежие знания и умения (git pull → link-knowledge.sh).
-      // Скрипт detached — переживает перезапуск моста. Когда он закончил, сбрасываем
-      // кэш умений и досылаем виджету правду: иначе счётчик «Подключено» врал бы до
-      // перезапуска помощника, хотя кнопка обещала обновление.
+      // «Обновить» / «Починить»: подтянуть свежий пакет, перелинковать скилы и MCP-конфиги.
+      // Скрипт detached — переживает перезапуск моста. Конкурентные запуски не дублируются;
+      // при ошибке отдаём обрезанный хвост лога (с вычищенными токенами) для диагностики.
       if (message.type === 'HRTECH_REPAIR') {
         const distribution = getHrtechDistribution();
+        if (this._repairRunning) {
+          try {
+            ws.send(JSON.stringify({ type: 'HRTECH_REPAIR_RESULT', data: { started: true, alreadyRunning: true, distribution } }));
+          } catch {}
+          return;
+        }
+        this._repairRunning = true;
+        const logPath = process.env.BULOCHKA_REPAIR_LOG || '/tmp/bulochka-repair.log';
+        const readLogTail = (): string => {
+          try {
+            const raw = readFileSync(logPath, 'utf8');
+            const markerIdx = raw.lastIndexOf('=== repair ');
+            const chunk = markerIdx >= 0 ? raw.slice(markerIdx) : raw;
+            const lines = chunk.split('\n').map(l => l.trim()).filter(Boolean)
+              .filter(l => !l.startsWith('=== repair'));
+            return redactSecrets(lines.slice(-6).join(' · ')).slice(0, 420);
+          } catch { return ''; }
+        };
         try {
           const script = join(PACKAGE_ROOT, 'scripts', 'repair.sh');
           const child = spawn('bash', [script], { detached: true, stdio: 'ignore' });
           child.on('error', (error) => {
+            this._repairRunning = false;
             try {
               if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({
                 type: 'HRTECH_REPAIR_RESULT',
-                data: { started: false, finished: true, ok: false, distribution, error: error.message },
+                data: { started: false, finished: true, ok: false, distribution, error: redactSecrets(error.message) },
               }));
             } catch {}
             logger.error({ error: error.message }, 'HRTECH repair could not start');
           });
           child.on('exit', (code) => {
+            this._repairRunning = false;
             _skillsCache = null;
+            _skillsCacheAt = 0;
             const skills = readInstalledSkills();
+            const ok = code === 0;
+            const errorDetail = ok ? undefined : readLogTail();
             try {
               if (ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({
                   type: 'HRTECH_REPAIR_RESULT',
-                  data: { started: true, finished: true, ok: code === 0, distribution, skills },
+                  data: { started: true, finished: true, ok, distribution, skills, ...(errorDetail ? { errorDetail } : {}) },
                 }));
               }
             } catch {}
@@ -577,15 +630,30 @@ export class FigmaWebSocketServer extends EventEmitter {
           try { ws.send(JSON.stringify({ type: 'HRTECH_REPAIR_RESULT', data: { started: true, distribution } })); } catch {}
           logger.info({ script }, 'HRTECH repair started');
         } catch (e) {
-          try { ws.send(JSON.stringify({ type: 'HRTECH_REPAIR_RESULT', data: { started: false, finished: true, ok: false, distribution, error: e instanceof Error ? e.message : String(e) } })); } catch {}
+          this._repairRunning = false;
+          try {
+            ws.send(JSON.stringify({
+              type: 'HRTECH_REPAIR_RESULT',
+              data: { started: false, finished: true, ok: false, distribution, error: redactSecrets(e instanceof Error ? e.message : String(e)) },
+            }));
+          } catch {}
         }
         return;
       }
 
-      // HR TECH: дизайнер вставил личный Figma-токен в виджете. Включаем REST-инструменты
-      // прямо сейчас (env) и сохраняем в ~/.hrtech/figma-token, чтобы пережить перезапуск
-      // моста — при старте local.ts читает этот файл, если env пуст.
+      // HR TECH: дизайнер вставил или удалил личный Figma-токен в настройках.
+      // Обновляем env, сбрасываем кэш FigmaAPI (через figmaTokenUpdated) и сохраняем в ~/.hrtech/figma-token.
       if (message.type === 'SET_FIGMA_TOKEN') {
+        const clear = (message as { clear?: unknown }).clear === true;
+        const tokenFile = join(homedir(), '.hrtech', 'figma-token');
+        if (clear) {
+          delete process.env.FIGMA_ACCESS_TOKEN;
+          try { unlinkSync(tokenFile); } catch { /* may not exist */ }
+          this.emit('figmaTokenUpdated', { hasToken: false });
+          logger.info('Figma access token cleared from plugin widget');
+          try { ws.send(JSON.stringify({ type: 'FIGMA_TOKEN_ACK', data: { ok: true, cleared: true } })); } catch {}
+          return;
+        }
         const token = typeof (message as { token?: unknown }).token === 'string'
           ? ((message as { token: string }).token).trim() : '';
         const looksValid = token.startsWith('fig') && token.length >= 20;
@@ -595,11 +663,12 @@ export class FigmaWebSocketServer extends EventEmitter {
           try {
             const dir = join(homedir(), '.hrtech');
             mkdirSync(dir, { recursive: true });
-            writeFileSync(join(dir, 'figma-token'), token, { mode: 0o600 });
+            writeFileSync(tokenFile, token, { mode: 0o600 });
             saved = true;
           } catch (e) {
             logger.warn({ error: e instanceof Error ? e.message : String(e) }, 'Figma token accepted (env only) — could not persist to ~/.hrtech');
           }
+          this.emit('figmaTokenUpdated', { hasToken: true });
           logger.info({ persisted: saved }, 'Figma access token set from plugin widget');
         }
         try { ws.send(JSON.stringify({ type: 'FIGMA_TOKEN_ACK', data: { ok: looksValid, saved } })); } catch {}
@@ -745,7 +814,13 @@ export class FigmaWebSocketServer extends EventEmitter {
     if (ws.readyState !== WebSocket.OPEN || this.retiredClients.has(ws) || this.clients.get(fileKey)?.ws !== ws) return;
     // Read identity and the skill together after the roundtrip; neither the
     // package's skill list nor another assistant's install is evidence here.
-    const client = this.mcpClient ? { name: this.mcpClient.name, version: this.mcpClient.version } : null;
+    const client = this.mcpClient
+      ? {
+          name: this.mcpClient.name,
+          version: this.mcpClient.version,
+          ...(this.mcpClient.title ? { title: this.mcpClient.title } : {}),
+        }
+      : null;
     const skillAvailable = isFigmaSearchSkillAvailable(client);
     try {
       ws.send(JSON.stringify({
@@ -760,18 +835,28 @@ export class FigmaWebSocketServer extends EventEmitter {
    * This is the critical multi-client identification step: each plugin reports
    * its fileKey on connect, allowing the server to track multiple files.
    */
-  /** Bulochka: collect local agent (Codex CLI / Claude Code) and installed-skill availability. */
+  /** Bulochka: collect local agent (Codex / Claude Code / Antigravity / Cursor) and installed-skill availability. */
   private async collectHrtechHostStatus(): Promise<Record<string, unknown>> {
+    const home = homedir();
     const codexBinary = findLocalAgentBinary('codex');
+    const codexApp = findLocalAppBundle('Codex.app', 'Codex') || findLocalAppBundle('ChatGPT.app', 'ChatGPT');
     const claudeBinary = findLocalAgentBinary('claude');
     const claudeDesktop = findLocalClaudeDesktopApp();
+    const antigravityBinary = findLocalAgentBinary('agy');
+    const antigravityApp = findLocalAppBundle('Antigravity.app', 'Antigravity');
+    const antigravityConfig = hasReadableDirectory(join(home, '.gemini', 'config')) || hasReadableDirectory(join(home, '.gemini', 'antigravity'));
+    const cursorBinary = findLocalAgentBinary('cursor');
+    const cursorApp = findLocalAppBundle('Cursor.app', 'Cursor');
+    const cursorConfig = hasReadableDirectory(join(home, '.cursor'));
     const installedSkills = readInstalledSkills();
     return {
       platform: process.platform,
       distribution: getHrtechDistribution(),
       agents: {
-        codex: { installed: !!codexBinary },
+        codex: { installed: !!codexBinary || !!codexApp, cli: !!codexBinary, app: !!codexApp },
         claude: { installed: !!claudeBinary || !!claudeDesktop, cli: !!claudeBinary, desktop: !!claudeDesktop },
+        antigravity: { installed: !!antigravityBinary || !!antigravityApp || antigravityConfig, cli: !!antigravityBinary, desktop: !!antigravityApp },
+        cursor: { installed: !!cursorBinary || !!cursorApp || cursorConfig, cli: !!cursorBinary, desktop: !!cursorApp },
       },
       skills: {
         installed: installedSkills.length,
@@ -868,6 +953,13 @@ export class FigmaWebSocketServer extends EventEmitter {
     // Additive protocol message: older plugins ignore it and keep working.
     // The new UI can distinguish an identified bridge from a registered file.
     try { ws.send(JSON.stringify({ type: 'FILE_REGISTERED', data: { fileKey, fileName: data.fileName } })); } catch {}
+    // Reflect current pin state immediately so the Settings switch stays honest on reconnect.
+    try {
+      ws.send(JSON.stringify({
+        type: 'PIN_STATE',
+        data: { pinned: this._pinnedFileKey === fileKey, fileKey, fileName: data.fileName, pinSource: this._pinSource },
+      }));
+    } catch {}
 
     logger.info(
       {

@@ -3,8 +3,24 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-export function startSupervisor({ engine = fileURLToPath(new URL('./engine.mjs', import.meta.url)), input = process.stdin, output = process.stdout, pollMs = 1500 } = {}) {
-  const lock = fileURLToPath(new URL('../../.bulochka-update.lock', import.meta.url));
+function isLockActive(lockPath) {
+  if (!existsSync(lockPath)) return false;
+  try {
+    const owner = JSON.parse(readFileSync(lockPath + '/owner.json', 'utf8'));
+    if (Number.isSafeInteger(owner.pid) && owner.pid > 0) {
+      try { process.kill(owner.pid, 0); return true; }
+      catch (err) { return err.code !== 'ESRCH'; }
+    }
+  } catch {
+    // Plain directory lock or owner.json not yet written: treat locks older than 5 min as stale.
+    try { return (Date.now() - statSync(lockPath).mtimeMs) <= 300000; } catch { return false; }
+  }
+  return true;
+}
+
+export function startSupervisor({ engine = fileURLToPath(new URL('./engine.mjs', import.meta.url)), lockDir = fileURLToPath(new URL('../..', import.meta.url)), input = process.stdin, output = process.stdout, pollMs = 1500 } = {}) {
+  const updateLock = lockDir.replace(/\/$/, '') + '/.bulochka-update.lock';
+  const repairLock = lockDir.replace(/\/$/, '') + '/.bulochka-repair.lock';
   const pending = new Map();
   const queue = [];
   let child, generation = 0, init, initialized = false, ready = false, closing = false;
@@ -107,7 +123,7 @@ export function startSupervisor({ engine = fileURLToPath(new URL('./engine.mjs',
     if (reloading && init) send({ ...init, id: initId });
   }
   function reload() {
-    if (closing || pending.size || !init || !initialized || existsSync(lock)) return;
+    if (closing || pending.size || !init || !initialized || isLockActive(updateLock) || isLockActive(repairLock)) return;
     let next;
     try { next = fingerprint(); } catch { return; }
     if (next === signature || next === failedSignature) return;
@@ -128,6 +144,7 @@ export function startSupervisor({ engine = fileURLToPath(new URL('./engine.mjs',
     if (old.exitCode !== null || old.signalCode !== null) nextEngine();
     else {
       old.once('exit', nextEngine);
+      try { old.stdin.end(); } catch {}
       old.kill('SIGTERM');
       restartTimer = setTimeout(() => { old.kill('SIGKILL'); }, 5000);
     }
@@ -150,10 +167,14 @@ export function startSupervisor({ engine = fileURLToPath(new URL('./engine.mjs',
       else forward(message);
     }
   });
+  let orphanWatch = null;
   function close() {
     if (closing) return;
     closing = true;
     clearInterval(poll); clearTimeout(restartTimer); clearTimeout(startTimer);
+    if (orphanWatch) clearInterval(orphanWatch);
+    try { child?.stdin?.end(); } catch {}
+    try { retired?.stdin?.end(); } catch {}
     child?.kill('SIGTERM'); retired?.kill('SIGTERM');
     input.pause();
     const watchdog = setTimeout(() => { child?.kill('SIGKILL'); retired?.kill('SIGKILL'); }, 3000);
@@ -161,9 +182,18 @@ export function startSupervisor({ engine = fileURLToPath(new URL('./engine.mjs',
   }
   const poll = setInterval(reload, pollMs);
   input.on('end', close);
+  input.on('close', close);
+  input.on('error', close);
   output.on('error', close);
   process.once('SIGTERM', close);
   process.once('SIGINT', close);
+  if (input === process.stdin && process.ppid > 1) {
+    const initialPpid = process.ppid;
+    orphanWatch = setInterval(() => {
+      if (process.ppid !== initialPpid || process.ppid === 1) close();
+    }, 5000);
+    orphanWatch.unref();
+  }
   launch();
   return { close };
 }

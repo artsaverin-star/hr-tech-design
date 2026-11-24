@@ -1,6 +1,6 @@
 #!/bin/bash
-# Булочка — подключение HR Tech skills и Figma-моста к вашему помощнику
-# (Codex CLI и/или Claude Code — что установлено, к тому и подключаем).
+# Булочка — подключение HR Tech skills и Figma-моста ко всем найденным помощникам
+# (Codex, Claude Code, Antigravity, Cursor).
 # Запускать один раз: ./setup.sh
 set -e
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -18,11 +18,14 @@ if ! bulochka_node_supported "$NODE_BIN"; then
   echo "✗ Нужен Node.js 20.19+, 22.13+ или 24+. Обнови Node.js или повтори установочную команду Булочки."
   exit 1
 fi
-# Помощник может быть любым из поддерживаемых — ищем оба и подключаемся ко всем найденным.
-if [ -z "$CODEX_BIN" ] && [ -z "$CLAUDE_BIN" ] && [ -z "${CLAUDE_DESKTOP_APP:-}" ]; then
+# Помощник может быть любым из поддерживаемых — ищем все и подключаемся ко всем найденным.
+if [ -z "$CODEX_BIN" ] && [ -z "${CODEX_APP:-}" ] && [ -z "${CODEX_CONFIG_FILE:-}" ] && \
+   [ -z "$CLAUDE_BIN" ] && [ -z "${CLAUDE_DESKTOP_APP:-}" ] && \
+   [ -z "${ANTIGRAVITY_DETECTED:-}" ] && [ -z "${CURSOR_DETECTED:-}" ]; then
   echo "✗ Не нашёл ни одного помощника. Поставь тот, которым пользуешься:"
   echo "  Codex CLI:    curl -fsSL https://chatgpt.com/codex/install.sh | sh"
   echo "  Claude Code:  npm install -g @anthropic-ai/claude-code"
+  echo "  Также поддерживаются Antigravity и Cursor."
   echo "  После установки повтори setup.sh."
   exit 1
 fi
@@ -49,7 +52,7 @@ if ! bash "$DIR/scripts/link-knowledge.sh"; then
   exit 1
 fi
 
-# 6. Миграция со старой очереди: Булочка ничего не выполняет и не запускает в фоне.
+# 4. Миграция со старой очереди: Булочка ничего не выполняет и не запускает в фоне.
 #    Раннера в репозитории больше нет, поэтому plist ОБЯЗАН уехать целиком: иначе launchd
 #    при следующей загрузке будет пытаться стартовать удалённый скрипт и спамить в лог.
 LEGACY_PLIST="$HOME/Library/LaunchAgents/design.hrtech.bulochka.runner.plist"

@@ -35,6 +35,7 @@ function fixture(t) {
   write(path.join(repo, 'runtime/bin/bridge.mjs'), '// fixture');
   const env = {
     PATH: `${bin}:/usr/bin:/bin`, HOME: userDir, CODEX_HOME: path.join(userDir, '.codex'),
+    BULOCHKA_APPS_DIR: '', BULOCHKA_BREW_BIN: '', BULOCHKA_LOCAL_BIN: '',
     BULOCHKA_TEST_CALLS: path.join(dir, 'calls'), BULOCHKA_TEST_STATE: path.join(dir, 'codex-state'),
     BULOCHKA_REPAIR_LOG: path.join(dir, 'repair.log'),
   };
@@ -410,4 +411,55 @@ test('owned command and knowledge links migrate from previous clones and remain 
   }
   assert.equal(fs.readlinkSync(path.join(commands, 'hrtech.md')), path.join(f.repo, 'claude/commands/hrtech.md'));
   assert.equal(fs.readlinkSync(path.join(commands, 'team-notes.md')), path.join(f.repo, 'claude/knowledge/team-notes.md'));
+});
+
+test('setup discovers and configures Antigravity, Cursor, and new ChatGPT CodexCLI path', t => {
+  const f = fixture(t);
+  addKnowledge(f);
+  fs.rmSync(path.join(f.bin, 'codex'));
+  fs.rmSync(path.join(f.bin, 'claude'));
+  // Simulate ChatGPT.app nested CodexCLI binary + Antigravity & Cursor config dirs
+  const fakeApps = path.join(f.dir, 'Apps');
+  const nestedCodex = path.join(fakeApps, 'ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex');
+  write(nestedCodex, `#!/usr/bin/env node
+import fs from 'node:fs';
+const args = process.argv.slice(2);
+if (args[0] === 'mcp' && args[1] === 'add') {
+  const split = args.indexOf('--');
+  fs.writeFileSync(process.env.BULOCHKA_TEST_STATE, JSON.stringify({
+    name: 'figma-hrtech', enabled: true, transport: { type: 'stdio', command: args[split + 1], args: args.slice(split + 2) }
+  }));
+  process.exit(0);
+}
+if (args[0] === 'mcp' && args[1] === 'get') {
+  console.log(fs.readFileSync(process.env.BULOCHKA_TEST_STATE, 'utf8'));
+  process.exit(0);
+}
+process.exit(1);
+`, true);
+  fs.mkdirSync(path.join(f.userDir, '.gemini/config'), { recursive: true });
+  fs.mkdirSync(path.join(f.userDir, '.cursor'), { recursive: true });
+  const result = run(f, '../setup.sh', { BULOCHKA_APPS_DIR: fakeApps });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /Codex, Antigravity, Cursor/);
+  const agy = JSON.parse(fs.readFileSync(path.join(f.userDir, '.gemini/config/mcp_config.json'), 'utf8'));
+  assert.equal(agy.mcpServers['figma-hrtech'].args[0], path.join(f.repo, 'runtime/bin/bridge.mjs'));
+  const cur = JSON.parse(fs.readFileSync(path.join(f.userDir, '.cursor/mcp.json'), 'utf8'));
+  assert.equal(cur.mcpServers['figma-hrtech'].args[0], path.join(f.repo, 'runtime/bin/bridge.mjs'));
+  assert.equal(fs.readlinkSync(path.join(f.userDir, '.gemini/config/skills/hrtech')), path.join(f.repo, 'claude/skills/hrtech'));
+  assert.equal(fs.readlinkSync(path.join(f.userDir, '.cursor/skills/hrtech')), path.join(f.repo, 'claude/skills/hrtech'));
+});
+
+test('connect-mcp respects CLAUDE_CONFIG_DIR with CLI even when Claude.app is installed', t => {
+  const f = fixture(t);
+  const fakeApps = path.join(f.dir, 'Apps');
+  fs.mkdirSync(path.join(fakeApps, 'Claude.app'), { recursive: true });
+  const customClaudeDir = path.join(f.dir, 'custom-claude');
+  fs.mkdirSync(customClaudeDir, { recursive: true });
+  // Restore real agent-paths.sh without the CLAUDE_DESKTOP_APP="" override for this test
+  write(path.join(f.repo, 'scripts/agent-paths.sh'), fs.readFileSync(path.join(root, 'scripts/agent-paths.sh'), 'utf8'));
+  const result = run(f, 'connect-mcp.sh', { BULOCHKA_APPS_DIR: fakeApps, CLAUDE_CONFIG_DIR: customClaudeDir });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const custom = JSON.parse(fs.readFileSync(path.join(customClaudeDir, '.claude.json'), 'utf8'));
+  assert.equal(custom.mcpServers['figma-hrtech'].args[0], path.join(f.repo, 'runtime/bin/bridge.mjs'));
 });

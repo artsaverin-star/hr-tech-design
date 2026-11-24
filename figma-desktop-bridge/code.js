@@ -4,9 +4,9 @@
 // Uses postMessage to communicate with ui.html (bypassing worker sandbox limitations),
 // which then forwards messages to the MCP server over the WebSocket bridge.
 
-// Plugin version — sent in FILE_INFO for server-side version compatibility checks.
-// The server compares this against its own version to detect stale cached plugins.
-var PLUGIN_VERSION = '1.33.0'; // Kept in sync with package.json by scripts/release.sh — see issue #62.
+// Figma worker release, reported in FILE_INFO. Plugin-only updates can advance
+// independently of the installed bridge and its package.json version.
+var PLUGIN_VERSION = '1.38.0';
 
 console.log('🌉 [Desktop Bridge] Plugin loaded (v' + PLUGIN_VERSION + ')');
 
@@ -295,7 +295,7 @@ async function loadFontsForNode(node) {
 // Listen for requests from UI (e.g., component data requests, write operations)
 // HR TECH: built-in bounded scanner — agents MUST use this instead of hand-written walkers.
 // Fast, capped, never freezes the plugin.
-globalThis.hrtechVersion = '4.33';
+globalThis.hrtechVersion = '5.0.0';
 
 // HR TECH: mechanical content diff — source vs built mobile. Fabricated text = busted.
 globalThis.hrtechDiff = async function (srcId, dstId) {
@@ -365,7 +365,7 @@ globalThis.hrtechScan = async function (nodeId, opts) {
 figma.ui.onmessage = async (msg) => {
 
   if (msg.type === 'HRTECH_UI_COMPACT_SET') {
-    figma.ui.resize(msg.collapsed === true ? 96 : 360, msg.collapsed === true ? 44 : 480);
+    figma.ui.resize(msg.collapsed === true ? 108 : 360, msg.collapsed === true ? 40 : 480);
     return;
   }
 

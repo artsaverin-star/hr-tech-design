@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <style>
+/*__BULOCHKA_STYLES__*/
+  </style>
+</head>
+<body data-theme="dark">
+  <div class="hrtech-app" data-connection-state="searching">
+    <header class="bun-header">
+      <div class="bun-brand" id="bun-brand" title="Булочка">
+        <span class="bun-mark" aria-hidden="true"></span>
+        <strong class="bun-brand-name">Булочка</strong>
+        <span class="bun-compact-state" id="bun-compact-state">…</span>
+      </div>
+      <nav class="bun-nav" aria-label="Навигация">
+        <button class="bun-nav-btn active" type="button" data-view="skills" onclick="hrtechNavigate('skills')">Главная</button>
+        <button class="bun-nav-btn" type="button" data-view="settings" onclick="hrtechNavigate('settings')">Настройки</button>
+      </nav>
+      <button class="bun-icon-btn" id="b6-collapse-toggle" type="button" aria-controls="b3-workspace" aria-expanded="true" aria-label="Свернуть Булочку" title="Свернуть Булочку" onclick="hrtechToggleCompact()">
+        <svg id="b6-collapse-svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
+          <line x1="3.5" y1="8" x2="12.5" y2="8"/>
+        </svg>
+      </button>
+    </header>
+
+    <button class="bun-status-bar" id="bun-connection-status" data-state="searching" type="button" onclick="hrtechOpenConnection()" title="Открыть настройки подключения">
+      <span class="bun-dot" aria-hidden="true"></span>
+      <span class="bun-status-text" id="bun-status-label" role="status" aria-live="polite">Подключаюсь…</span>
+      <span class="bun-status-pin" id="bun-status-pin" hidden>Закреплён</span>
+      <span class="bun-status-chevron" aria-hidden="true">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="6 3.5 10.5 8 6 12.5"/>
+        </svg>
+      </span>
+    </button>
+
+    <section class="bun-workspace" id="b3-workspace">
+      <main class="bun-content" id="bun-content">
+        <div class="bun-activity" id="hrtech-gen" hidden>
+          <span class="bun-activity-dot" aria-hidden="true"></span>
+          <div class="bun-activity-body">
+            <span class="bun-activity-title">Помощник работает с макетом</span>
+            <span class="bun-activity-detail" id="hrtech-activity-detail"></span>
+          </div>
+        </div>
+
+        <!-- Главная -->
+        <section class="bun-view active" data-view-panel="skills">
+          <p class="bun-intro">Даёт <strong>Codex, Claude, Antigravity и Cursor</strong> доступ к Figma и знаниям HR Tech.</p>
+          <div class="bun-section-head">
+            <span class="bun-section-label">Попробуйте в чате помощника</span>
+            <span class="bun-section-hint">Клик скопирует</span>
+          </div>
+          <!-- BULOCHKA_SKILLS_START -->
+          <ul class="bun-prompts">
+            <li id="bun-figma-search-example" hidden>
+              <button class="bun-prompt-btn" type="button" onclick="hrtechCopyPrompt(this, 'Найди в Figma экран управления доступами')">
+                <span class="bun-prompt-copy">
+                  <strong class="bun-prompt-quote">«Найди в Figma экран управления доступами»</strong>
+                  <span class="bun-prompt-desc">Ищет файлы, экраны и тексты по базе HR Tech</span>
+                </span>
+                <span class="bun-prompt-badge" aria-hidden="true">
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5V4A1.5 1.5 0 0 0 9 2.5H4A1.5 1.5 0 0 0 2.5 4v5A1.5 1.5 0 0 0 4 10.5h1.5"/></svg>
+                </span>
+              </button>
+            </li>
+            <li>
+              <button class="bun-prompt-btn" type="button" onclick="hrtechCopyPrompt(this, 'Проверь этот экран по HRDS')">
+                <span class="bun-prompt-copy">
+                  <strong class="bun-prompt-quote">«Проверь этот экран по HRDS»</strong>
+                  <span class="bun-prompt-desc">Найдёт и исправит нарушения дизайн-системы</span>
+                </span>
+                <span class="bun-prompt-badge" aria-hidden="true">
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5V4A1.5 1.5 0 0 0 9 2.5H4A1.5 1.5 0 0 0 2.5 4v5A1.5 1.5 0 0 0 4 10.5h1.5"/></svg>
+                </span>
+              </button>
+            </li>
+            <li>
+              <button class="bun-prompt-btn" type="button" onclick="hrtechCopyPrompt(this, 'Собери мобильную версию экрана')">
+                <span class="bun-prompt-copy">
+                  <strong class="bun-prompt-quote">«Собери мобильную версию экрана»</strong>
+                  <span class="bun-prompt-desc">Адаптирует макет на 375 px по HRDS</span>
+                </span>
+                <span class="bun-prompt-badge" aria-hidden="true">
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5V4A1.5 1.5 0 0 0 9 2.5H4A1.5 1.5 0 0 0 2.5 4v5A1.5 1.5 0 0 0 4 10.5h1.5"/></svg>
+                </span>
+              </button>
+            </li>
+            <li>
+              <button class="bun-prompt-btn" type="button" onclick="hrtechCopyPrompt(this, 'Найди, как это сделано на проде')">
+                <span class="bun-prompt-copy">
+                  <strong class="bun-prompt-quote">«Найди, как это сделано на проде»</strong>
+                  <span class="bun-prompt-desc">Проверит исходники, тексты и состояния в Аркадии</span>
+                </span>
+                <span class="bun-prompt-badge" aria-hidden="true">
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5V4A1.5 1.5 0 0 0 9 2.5H4A1.5 1.5 0 0 0 2.5 4v5A1.5 1.5 0 0 0 4 10.5h1.5"/></svg>
+                </span>
+              </button>
+            </li>
+            <li>
+              <button class="bun-prompt-btn" type="button" onclick="hrtechCopyPrompt(this, 'Оформи сценарий из этих экранов')">
+                <span class="bun-prompt-copy">
+                  <strong class="bun-prompt-quote">«Оформи сценарий из этих экранов»</strong>
+                  <span class="bun-prompt-desc">Разложит состояния и свяжет переходы на борде</span>
+                </span>
+                <span class="bun-prompt-badge" aria-hidden="true">
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5V4A1.5 1.5 0 0 0 9 2.5H4A1.5 1.5 0 0 0 2.5 4v5A1.5 1.5 0 0 0 4 10.5h1.5"/></svg>
+                </span>
+              </button>
+            </li>
+            <li>
+              <button class="bun-prompt-btn" type="button" onclick="hrtechCopyPrompt(this, 'Собери прототип по этой спеке')">
+                <span class="bun-prompt-copy">
+                  <strong class="bun-prompt-quote">«Собери прототип по этой спеке»</strong>
+                  <span class="bun-prompt-desc">Сделает живую версию в Прототипнице</span>
+                </span>
+                <span class="bun-prompt-badge" aria-hidden="true">
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5V4A1.5 1.5 0 0 0 9 2.5H4A1.5 1.5 0 0 0 2.5 4v5A1.5 1.5 0 0 0 4 10.5h1.5"/></svg>
+                </span>
+              </button>
+            </li>
+            <li>
+              <button class="bun-prompt-btn" type="button" onclick="hrtechCopyPrompt(this, 'Обнови спеку по прототипу')">
+                <span class="bun-prompt-copy">
+                  <strong class="bun-prompt-quote">«Обнови спеку по прототипу»</strong>
+                  <span class="bun-prompt-desc">Сверит макеты Figma с живым прототипом</span>
+                </span>
+                <span class="bun-prompt-badge" aria-hidden="true">
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5V4A1.5 1.5 0 0 0 9 2.5H4A1.5 1.5 0 0 0 2.5 4v5A1.5 1.5 0 0 0 4 10.5h1.5"/></svg>
+                </span>
+              </button>
+            </li>
+          </ul>
+          <!-- BULOCHKA_SKILLS_END -->
+          <p class="bun-footnote">Оставьте Булочку открытой или сверните в угол — связь сохранится.</p>
+        </section>
+
+        <!-- Настройки -->
+        <section class="bun-view" id="b3-settings-view" data-view-panel="settings">
+          <article class="bun-hero-card" id="hrtech-conn" data-state="searching">
+            <div class="bun-hero-head">
+              <span class="bun-dot" id="hrtech-lamp" aria-hidden="true"></span>
+              <h2 class="bun-hero-title" id="bun-connection-title">Подключаюсь…</h2>
+            </div>
+            <div class="bun-client-pills" id="bun-client-pills" hidden></div>
+            <p class="bun-conn-msg" id="hrtech-conn-msg" role="status" aria-live="polite" hidden></p>
+
+            <div class="bun-offline-steps" id="bun-offline-steps" hidden>
+              <div><strong>Уже устанавливали?</strong> Откройте новый чат в Codex, Claude, Antigravity или Cursor — мост запустится сам.</div>
+              <div><strong>В первый раз?</strong> Скопируйте команду, вставьте в Терминал (⌘V, Enter), затем откройте новый чат.</div>
+            </div>
+
+            <div class="bun-file-box" id="bun-connected-file" hidden>
+              <div class="bun-file-meta">
+                <strong class="bun-file-name" id="b3-file-name"></strong>
+                <span class="bun-file-page" id="b3-page-name"></span>
+              </div>
+              <div class="bun-switch-row" id="bun-pin-row">
+                <div class="bun-switch-copy">
+                  <span class="bun-switch-title">Только этот файл</span>
+                  <span class="bun-switch-sub" id="bun-pin-sub">Другие вкладки Figma не перехватят помощника</span>
+                </div>
+                <button class="bun-switch" id="hrtech-lock-toggle" type="button" role="switch" aria-pressed="false" aria-label="Работать только в этом файле" onclick="hrtechToggleLock()"></button>
+              </div>
+            </div>
+
+            <div class="bun-actions">
+              <button class="bun-btn bun-btn-primary" id="hrtech-reclaim" type="button" onclick="hrtechReclaim()" hidden>Подключить здесь</button>
+              <button class="bun-btn bun-btn-primary" id="hrtech-connect" type="button" onclick="hrtechActivate()" hidden>Возобновить</button>
+              <button class="bun-btn" id="hrtech-repair" type="button" onclick="hrtechRepair()">Починить</button>
+              <button class="bun-btn-link" id="hrtech-install-manual" type="button" onclick="hrtechCopyInstall()">Команда для Терминала</button>
+            </div>
+            <p class="bun-note" id="hrtech-install-note" role="status"></p>
+            <p class="bun-note" id="bun-update-note" role="status"></p>
+          </article>
+
+          <details class="bun-accordion" id="bun-token-details">
+            <summary>
+              <span class="bun-accordion-title">Токен Figma</span>
+              <span class="bun-badge" id="hrtech-token-state">Необязательно</span>
+              <span class="bun-accordion-chevron" aria-hidden="true">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 3.5 10.5 8 6 12.5"/></svg>
+              </span>
+            </summary>
+            <div class="bun-accordion-body">
+              <p class="bun-accordion-hint">Нужен для комментариев, версий и опубликованных библиотек. Для обычной работы с макетом не требуется.</p>
+              <div class="bun-actions" id="hrtech-token-actions">
+                <button class="bun-btn" id="hrtech-token-edit-btn" type="button" onclick="hrtechTokenEdit()">Добавить токен</button>
+                <button class="bun-btn bun-btn-danger" id="hrtech-token-clear-btn" type="button" onclick="hrtechTokenClear()" hidden>Удалить</button>
+              </div>
+              <div class="bun-token-form" id="hrtech-token-edit" hidden>
+                <input class="bun-input" id="hrtech-token-input" type="password" placeholder="figd_…" autocomplete="off" aria-label="Личный токен Figma">
+                <div class="bun-token-hint">Figma → Settings → Security → Personal access tokens</div>
+                <div class="bun-actions" style="margin-top:2px">
+                  <button class="bun-btn bun-btn-primary" type="button" onclick="hrtechTokenSave()">Сохранить</button>
+                  <button class="bun-btn" type="button" onclick="hrtechTokenCancel()">Отмена</button>
+                </div>
+              </div>
+              <p class="bun-note" id="hrtech-token-msg" role="status"></p>
+            </div>
+          </details>
+
+          <details class="bun-accordion" id="bun-diag-details">
+            <summary>
+              <span class="bun-accordion-title">Диагностика</span>
+              <span class="bun-badge" id="b6-settings-version">v__UI_VERSION__</span>
+              <span class="bun-accordion-chevron" aria-hidden="true">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 3.5 10.5 8 6 12.5"/></svg>
+              </span>
+            </summary>
+            <div class="bun-accordion-body">
+              <div class="bun-kv-list">
+                <div class="bun-kv-row">
+                  <span class="bun-kv-label">Мост</span>
+                  <span class="bun-kv-value muted" id="b3-bridge-version">Не подключён</span>
+                </div>
+                <div class="bun-kv-row">
+                  <span class="bun-kv-label">На компьютере</span>
+                  <span class="bun-kv-value muted" id="b3-codex-meta">Нет данных</span>
+                </div>
+                <div class="bun-kv-row">
+                  <span class="bun-kv-label">Умения HR Tech</span>
+                  <span class="bun-kv-value muted" id="hrtech-skills-count">Нет данных</span>
+                </div>
+                <div class="bun-kv-row">
+                  <span class="bun-kv-label">Установка</span>
+                  <span class="bun-kv-value muted" id="bun-dist-meta">Нет данных</span>
+                </div>
+              </div>
+              <p class="bun-note" id="hrtech-skills-hint"></p>
+              <div class="bun-actions">
+                <button class="bun-btn" type="button" onclick="hrtechCopyDiagnostics()">Скопировать отчёт</button>
+                <button class="bun-btn-link" type="button" onclick="hrtechToggleDiagnostics()">Открыть журнал</button>
+              </div>
+              <p class="bun-note" id="bun-diagnostics-feedback" role="status"></p>
+            </div>
+          </details>
+        </section>
+      </main>
+    </section>
+
+    <!-- Журнал диагностики -->
+    <aside class="bun-drawer" id="bun-drawer" hidden aria-label="Журнал подключения">
+      <div class="bun-drawer-head">
+        <strong class="bun-drawer-title">Журнал</strong>
+        <button class="bun-btn" type="button" onclick="hrtechToggleDiagnostics()">Закрыть</button>
+      </div>
+      <div class="bun-drawer-toolbar">
+        <span class="bun-drawer-meta" id="log-servers">0 подключений</span>
+        <button class="bun-chip" id="bun-pause-btn" type="button" onclick="hrtechTogglePause()">Пауза</button>
+        <button class="bun-chip" id="errors-toggle" type="button" aria-pressed="false" onclick="toggleErrorsOnly()">Ошибки</button>
+        <button class="bun-chip" type="button" onclick="copyLogToClipboard()">Копировать</button>
+      </div>
+      <div class="bun-log-list" id="log-entries"></div>
+    </aside>
+  </div>
+
+  <script>
+/*__BULOCHKA_SCRIPT_RPC__*/
+  </script>
+  <script>
+/*__BULOCHKA_SCRIPT_WS__*/
+  </script>
+  <script>
+/*__BULOCHKA_SCRIPT_APP__*/
+  </script>
+  <script>
+/*__BULOCHKA_SCRIPT_KEEPALIVE__*/
+  </script>
+</body>
+</html>

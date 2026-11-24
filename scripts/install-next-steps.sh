@@ -4,14 +4,26 @@ set -e
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 . "$DIR/scripts/agent-paths.sh"
 
+AGENTS=""
+if [ -n "$CODEX_BIN" ] || [ -n "${CODEX_APP:-}" ] || [ -n "${CODEX_CONFIG_FILE:-}" ]; then
+  AGENTS="${AGENTS:+$AGENTS, }Codex"
+fi
+if [ -n "$CLAUDE_BIN" ] || [ -n "${CLAUDE_DESKTOP_APP:-}" ]; then
+  AGENTS="${AGENTS:+$AGENTS, }Claude Code"
+fi
+if [ -n "${ANTIGRAVITY_DETECTED:-}" ]; then
+  AGENTS="${AGENTS:+$AGENTS, }Antigravity"
+fi
+if [ -n "${CURSOR_DETECTED:-}" ]; then
+  AGENTS="${AGENTS:+$AGENTS, }Cursor"
+fi
+
 printf '\n✓ Булочка настроена на компьютере.\n'
 printf 'Осталось подключить открытый макет:\n\n'
-if [ -n "$CODEX_BIN" ] && [ -z "$CLAUDE_BIN" ] && [ -z "${CLAUDE_DESKTOP_APP:-}" ]; then
-  printf '1. Откройте новый чат в Codex.\n'
-elif { [ -n "$CLAUDE_BIN" ] || [ -n "${CLAUDE_DESKTOP_APP:-}" ]; } && [ -z "$CODEX_BIN" ]; then
-  printf '1. Откройте новую сессию Claude Code.\n'
+if [ -n "$AGENTS" ]; then
+  printf '1. Откройте новый чат в %s.\n' "$AGENTS"
 else
-  printf '1. Откройте новый чат в Codex или новую сессию Claude Code.\n'
+  printf '1. Откройте новый чат в Codex, Claude Code, Antigravity или Cursor.\n'
 fi
 if [ -n "${CLAUDE_DESKTOP_APP:-}" ]; then
   printf '   В приложении Claude выберите вкладку Code.\n'

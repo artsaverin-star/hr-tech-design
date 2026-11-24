@@ -1,14 +1,9 @@
 #!/bin/bash
-# Bulochka · подключение HR Tech skills к помощнику дизайнера (Codex CLI и/или Claude Code).
+# Bulochka · подключение HR Tech skills ко всем найденным помощникам дизайнера
+# (Codex, Claude Code, Antigravity, Cursor).
 #
-# Скилы остаются версионируемыми файлами репозитория, а помощник видит их через
-# симлинки в своём user-scope каталоге. Поэтому обновление репозитория сразу
-# обновляет умения без второй копии знания.
-#
-# Линкуем в ОБА каталога: помощник у дизайнера может быть любым, а поддержка
-# «через одного» = у половины команды умения молча не доезжают. Заодно чиним две
-# типовые поломки: симлинк указывает на ДРУГОЙ клон репозитория (у человека их два)
-# и симлинк остался от удалённого скила.
+# Скилы остаются версионируемыми файлами репозитория/пакета, а помощник видит их через
+# симлинки в своём user-scope каталоге.
 set -eu
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 CODEX_SKILLS_ROOT="$HOME/.agents/skills"
@@ -16,8 +11,27 @@ CODEX_LEGACY_SKILLS_ROOT="${CODEX_HOME:-$HOME/.codex}/skills"
 CLAUDE_CONFIG_ROOT="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 CLAUDE_SKILLS_ROOT="$CLAUDE_CONFIG_ROOT/skills"
 CLAUDE_COMMANDS_ROOT="$CLAUDE_CONFIG_ROOT/commands"
+ANTIGRAVITY_SKILLS_ROOT="$HOME/.gemini/config/skills"
+CURSOR_SKILLS_ROOT="$HOME/.cursor/skills"
+
+# Определяем, установлены ли Antigravity / Cursor, не создавая лишние каталоги там, где их нет.
+BULOCHKA_SYS_APPS="${BULOCHKA_APPS_DIR-/Applications}"
+LINK_ANTIGRAVITY=0
+if [ -d "$HOME/.gemini/config" ] || [ -d "$HOME/.gemini/antigravity" ] || \
+   { [ -n "$BULOCHKA_SYS_APPS" ] && [ -d "$BULOCHKA_SYS_APPS/Antigravity.app" ]; } || \
+   [ -d "$HOME/Applications/Antigravity.app" ] || command -v agy >/dev/null 2>&1; then
+  LINK_ANTIGRAVITY=1
+fi
+LINK_CURSOR=0
+if [ -d "$HOME/.cursor" ] || \
+   { [ -n "$BULOCHKA_SYS_APPS" ] && [ -d "$BULOCHKA_SYS_APPS/Cursor.app" ]; } || \
+   [ -d "$HOME/Applications/Cursor.app" ] || command -v cursor >/dev/null 2>&1; then
+  LINK_CURSOR=1
+fi
 
 mkdir -p "$CODEX_SKILLS_ROOT" "$CLAUDE_SKILLS_ROOT" "$CLAUDE_COMMANDS_ROOT"
+[ "$LINK_ANTIGRAVITY" -eq 1 ] && mkdir -p "$ANTIGRAVITY_SKILLS_ROOT"
+[ "$LINK_CURSOR" -eq 1 ] && mkdir -p "$CURSOR_SKILLS_ROOT"
 
 # Не вкладывать ссылку внутрь существующей папки и не заменять чужое умение.
 # Исторические пути /codex/skills тоже принадлежат старому пакету Булочки.
@@ -36,7 +50,7 @@ link_skill() {
   ln -sfn "$source" "$target"
 }
 
-# 1. Слэш-команды и база знаний (их читает Claude Code; Codex берёт те же файлы из скилов).
+# 1. Слэш-команды и база знаний (их читает Claude Code; остальные берут те же файлы из скилов).
 link_command() {
   local source="$1" target="$2" previous relative
   relative="${source#"$DIR"/}"
@@ -80,12 +94,18 @@ for SKILL_DIR in "$DIR"/claude/skills/*/; do
     FAILED=1
   fi
   link_skill "${SKILL_DIR%/}" "$CLAUDE_SKILLS_ROOT/$SKILL_NAME" || FAILED=1
+  if [ "$LINK_ANTIGRAVITY" -eq 1 ]; then
+    link_skill "${SKILL_DIR%/}" "$ANTIGRAVITY_SKILLS_ROOT/$SKILL_NAME" || FAILED=1
+  fi
+  if [ "$LINK_CURSOR" -eq 1 ]; then
+    link_skill "${SKILL_DIR%/}" "$CURSOR_SKILLS_ROOT/$SKILL_NAME" || FAILED=1
+  fi
   SKILL_N=$((SKILL_N + 1))
 done
 
 # 3. Убираем только битые ссылки на старые клоны Булочки. Чужие skills не трогаем.
 PRUNED=0
-for LINK in "$CODEX_SKILLS_ROOT"/* "$CODEX_LEGACY_SKILLS_ROOT"/* "$CLAUDE_SKILLS_ROOT"/* "$CLAUDE_COMMANDS_ROOT"/*; do
+for LINK in "$CODEX_SKILLS_ROOT"/* "$CODEX_LEGACY_SKILLS_ROOT"/* "$CLAUDE_SKILLS_ROOT"/* "$CLAUDE_COMMANDS_ROOT"/* "$ANTIGRAVITY_SKILLS_ROOT"/* "$CURSOR_SKILLS_ROOT"/*; do
   [ -L "$LINK" ] || continue
   [ -e "$LINK" ] && continue
   TARGET="$(readlink "$LINK")"
@@ -107,12 +127,16 @@ for LINK in "$CODEX_SKILLS_ROOT"/* "$CODEX_LEGACY_SKILLS_ROOT"/* "$CLAUDE_SKILLS
   esac
 done
 
+TARGETS="Codex, Claude Code"
+[ "$LINK_ANTIGRAVITY" -eq 1 ] && TARGETS="$TARGETS, Antigravity"
+[ "$LINK_CURSOR" -eq 1 ] && TARGETS="$TARGETS, Cursor"
+
 if [ "$SKILL_N" -eq 0 ]; then
   echo "✗ В проекте не найдены умения HR Tech. Повторите установку полного пакета Булочки."
   FAILED=1
 fi
 if [ "$FAILED" -eq 0 ]; then
-  echo "· Умения Булочки подключены: $SKILL_N (Codex, Claude Code)"
+  echo "· Умения Булочки подключены: $SKILL_N ($TARGETS)"
 else
   echo "· Часть умений не подключена — существующие файлы сохранены. Причины указаны выше."
 fi

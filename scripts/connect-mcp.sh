@@ -1,13 +1,9 @@
 #!/bin/bash
-# Булочка · подключение Figma-моста как MCP-сервера `figma-hrtech` к найденным помощникам.
+# Булочка · подключение Figma-моста как MCP-сервера `figma-hrtech` ко всем найденным помощникам
+# (Codex, Claude Code, Antigravity, Cursor).
 #
-# Зачем отдельным файлом: раньше это умел ТОЛЬКО setup.sh, то есть терминал. Самая частая
-# поломка у дизайнера — «помощник не видит мост» (в ~/.codex/config.toml нет секции
-# [mcp_servers.figma-hrtech]) — кнопкой не лечилась. Теперь этот скрипт зовут оба:
-# setup.sh при установке и repair.sh по кнопке «Обновить».
-#
-# PATH здесь минимальный: repair.sh запускается из процесса моста, а не из шелла дизайнера,
-# поэтому node и помощников ищем ещё и по известным местам установки.
+# Вызывается и из setup.sh при установке, и из repair.sh по кнопке «Обновить» / «Починить».
+# PATH здесь минимальный: repair.sh запускается из процесса моста, а не из шелла дизайнера.
 # set -u НЕ ставим: в bash 3.2 (штатный на macOS) "${ARR[@]}" на пустом массиве падает.
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 . "$DIR/scripts/agent-paths.sh"
@@ -74,7 +70,11 @@ verify_codex_config() {
 
 CONNECTED=""
 FAILED=0
+
+# 1. Codex (CLI или резервная запись в config.toml, если найдено приложение/конфиг без бинаря)
 if [ -n "$CODEX_BIN" ]; then
+  # Новый Codex CLI падает с «failed to resolve CODEX_HOME», если каталог ещё не создан.
+  mkdir -p "${CODEX_HOME:-$HOME/.codex}" 2>/dev/null || true
   # Codex add обновляет существующую запись. Предварительный remove терял рабочую
   # настройку, если следом add падал (например, из-за ошибки конфигурации).
   if RESULT="$("$CODEX_BIN" mcp add figma-hrtech ${ENV_ARGS[@]+"${ENV_ARGS[@]}"} -- "$NODE_BIN" "$SERVER" 2>&1)"; then
@@ -87,11 +87,25 @@ if [ -n "$CODEX_BIN" ]; then
     report_failure "Codex" "$RESULT"
     FAILED=1
   fi
+elif [ -n "${CODEX_APP:-}" ] || [ -n "${CODEX_CONFIG_FILE:-}" ]; then
+  if RESULT="$("$NODE_BIN" "$DIR/scripts/configure-claude-desktop.mjs" --client codex-toml --node "$NODE_BIN" --server "$SERVER" --token-file "$TOKEN_FILE" 2>&1)"; then
+    CONNECTED="Codex"
+  else
+    report_failure "Codex" "$RESULT"
+    FAILED=1
+  fi
 fi
-if [ -n "${CLAUDE_DESKTOP_APP:-}" ]; then
-  # CLI и локальная вкладка Code в Claude Desktop читают один user-scope JSON.
-  # Атомарное обновление не удаляет рабочую запись перед проверкой и также чинит
-  # существующий legacy desktop override с тем же именем сервера.
+
+# 2. Claude Code (Desktop Code tab и/или CLI).
+# Если явно задан CLAUDE_CONFIG_DIR и найден CLI — настраиваем CLI-профиль, не ломаясь на Desktop-ветке.
+if [ -n "${CLAUDE_CONFIG_DIR:-}" ] && [ -n "$CLAUDE_BIN" ]; then
+  if RESULT="$("$NODE_BIN" "$DIR/scripts/configure-claude-desktop.mjs" --client cli --node "$NODE_BIN" --server "$SERVER" --token-file "$TOKEN_FILE" 2>&1)"; then
+    CONNECTED="${CONNECTED:+$CONNECTED, }Claude Code"
+  else
+    report_failure "Claude Code" "$RESULT"
+    FAILED=1
+  fi
+elif [ -n "${CLAUDE_DESKTOP_APP:-}" ]; then
   if RESULT="$("$NODE_BIN" "$DIR/scripts/configure-claude-desktop.mjs" --node "$NODE_BIN" --server "$SERVER" --token-file "$TOKEN_FILE" 2>&1)"; then
     CONNECTED="${CONNECTED:+$CONNECTED, }Claude Code"
   else
@@ -99,12 +113,30 @@ if [ -n "${CLAUDE_DESKTOP_APP:-}" ]; then
     FAILED=1
   fi
 elif [ -n "$CLAUDE_BIN" ]; then
-  # Use the same atomic user-scope writer for standalone CLI installs. Removing
-  # first loses a working entry if the subsequent add cannot save its config.
   if RESULT="$("$NODE_BIN" "$DIR/scripts/configure-claude-desktop.mjs" --client cli --node "$NODE_BIN" --server "$SERVER" --token-file "$TOKEN_FILE" 2>&1)"; then
     CONNECTED="${CONNECTED:+$CONNECTED, }Claude Code"
   else
     report_failure "Claude Code" "$RESULT"
+    FAILED=1
+  fi
+fi
+
+# 3. Antigravity
+if [ -n "${ANTIGRAVITY_DETECTED:-}" ]; then
+  if RESULT="$("$NODE_BIN" "$DIR/scripts/configure-claude-desktop.mjs" --client antigravity --node "$NODE_BIN" --server "$SERVER" --token-file "$TOKEN_FILE" 2>&1)"; then
+    CONNECTED="${CONNECTED:+$CONNECTED, }Antigravity"
+  else
+    report_failure "Antigravity" "$RESULT"
+    FAILED=1
+  fi
+fi
+
+# 4. Cursor
+if [ -n "${CURSOR_DETECTED:-}" ]; then
+  if RESULT="$("$NODE_BIN" "$DIR/scripts/configure-claude-desktop.mjs" --client cursor --node "$NODE_BIN" --server "$SERVER" --token-file "$TOKEN_FILE" 2>&1)"; then
+    CONNECTED="${CONNECTED:+$CONNECTED, }Cursor"
+  else
+    report_failure "Cursor" "$RESULT"
     FAILED=1
   fi
 fi

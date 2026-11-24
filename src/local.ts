@@ -122,7 +122,13 @@ class LocalFigmaConsoleMCP {
 	private wsReaperStop: (() => void) | null = null;
 	/** Heartbeat timer that refreshes port file to prove this server is active */
 	private wsHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
+	/** Called when stdio transport closes so the bridge releases its WS port immediately */
+	private emitTransportClosed: (() => void) | null = null;
 	private config = getConfig();
+
+	setTransportClosedHandler(handler: () => void): void {
+		this.emitTransportClosed = handler;
+	}
 
 	// In-memory cache for variables data to avoid MCP token limits
 	// Maps fileKey -> {data, timestamp}
@@ -3558,6 +3564,12 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 			}
 
 			if (this.wsServer) {
+				// Invalidate cached FigmaAPI client when user sets or clears token in plugin Settings
+				this.wsServer.on("figmaTokenUpdated", () => {
+					this.figmaAPI = null;
+					logger.info("Figma API client reset after token update from plugin UI");
+				});
+
 				// Log when plugin files connect/disconnect (with file identity)
 				this.wsServer.on("fileConnected", (data: { fileKey: string; fileName: string }) => {
 					logger.info({ fileKey: data.fileKey, fileName: data.fileName }, "Desktop Bridge plugin connected via WebSocket");
@@ -3622,8 +3634,18 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 
 			// Only the completed MCP handshake confirms an assistant, not a listening port.
 			this.server.server.oninitialized = () => {
-				const client = this.server.server.getClientVersion();
-				this.wsServer?.setMcpClient(client ? { name: client.name, version: client.version } : null);
+				const client = this.server.server.getClientVersion() as { name: string; version: string; title?: string } | undefined;
+				this.wsServer?.setMcpClient(
+					client
+						? { name: client.name, version: client.version, ...(client.title ? { title: client.title } : {}) }
+						: null,
+				);
+			};
+
+			// Exit cleanly when the MCP client closes stdio so ports 9223-9232 never leak.
+			transport.onclose = () => {
+				logger.info("Stdio transport closed — shutting down bridge");
+				this.emitTransportClosed?.();
 			};
 
 			// Connect server to transport
@@ -3724,6 +3746,23 @@ async function main() {
 
 	process.on("SIGINT", () => { void gracefulExit(0); });
 	process.on("SIGTERM", () => { void gracefulExit(0); });
+	process.stdin.on("end", () => { void gracefulExit(0); });
+	process.stdin.on("close", () => { void gracefulExit(0); });
+	process.stdout.on("error", () => { void gracefulExit(0); });
+	server.setTransportClosedHandler(() => { void gracefulExit(0); });
+
+	// If our supervising parent process was killed abruptly (SIGKILL), exit cleanly
+	// instead of holding a port in 9223-9232 as an orphaned zombie.
+	const initialPpid = process.ppid;
+	if (initialPpid > 1) {
+		const orphanWatch = setInterval(() => {
+			if (process.ppid !== initialPpid || process.ppid === 1) {
+				logger.info({ initialPpid, currentPpid: process.ppid }, "Parent process exited — releasing bridge port");
+				void gracefulExit(0);
+			}
+		}, 5000);
+		orphanWatch.unref();
+	}
 
 	// Start the server
 	await server.start();

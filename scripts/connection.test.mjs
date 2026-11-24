@@ -6,11 +6,12 @@ import vm from 'node:vm';
 import ts from 'typescript';
 import { EventEmitter } from 'node:events';
 
-const html = fs.readFileSync(new URL('../figma-desktop-bridge/ui.html', import.meta.url), 'utf8');
-const start = html.indexOf('    (function() {\n      // Port range for multi-instance support');
-assert.ok(start >= 0, 'the production WebSocket client must be present');
-const end = html.indexOf('    })();', start) + '    })();'.length;
-const clientSource = html.slice(start, end);
+// An explicit local override lets regressions prove the previous shipped UI fails.
+const versionMeta = JSON.parse(fs.readFileSync(new URL('../bulochka.version.json', import.meta.url), 'utf8'));
+const html = fs.readFileSync(process.env.HRTECH_TEST_UI || new URL('../figma-desktop-bridge/ui.html', import.meta.url), 'utf8');
+const wsMatch = html.match(/\(function\(\)\s*\{\n\s*\/\/ Port range for multi-instance support[\s\S]*?\n\s*\}\)\(\);/);
+assert.ok(wsMatch, 'the production WebSocket client must be present');
+const clientSource = wsMatch[0];
 
 // Execute the production client with controlled network events. No real ports,
 // user settings, or Figma documents are touched by these regressions.
@@ -69,6 +70,10 @@ function clientHarness({ constructorThrows = false, onSocket, sendPluginCommand 
   const context = vm.createContext({
     window,
     WebSocket: Socket,
+    Date: class extends Date {
+      constructor(...args) { super(...(args.length ? args : [now])); }
+      static now() { return now; }
+    },
     console: { log() {}, error() {} },
     setTimeout(fn, delay) { return schedule(fn, delay); },
     clearTimeout(timer) { if (timer) timer.canceled = true; },
@@ -99,6 +104,7 @@ function productStatement(name) {
   for (const script of productScripts) {
     for (const statement of script.statements) {
       if (ts.isFunctionDeclaration(statement) && statement.name?.text === name) return statement.getText(script);
+      if (ts.isVariableStatement(statement) && statement.declarationList.declarations.some(declaration => declaration.name.getText(script) === name)) return statement.getText(script);
       if (ts.isExpressionStatement(statement) && ts.isBinaryExpression(statement.expression)
         && statement.expression.left.getText(script) === name) return statement.getText(script);
     }
@@ -112,27 +118,49 @@ function repairHarness(options = {}) {
   function element(key) {
     if (!nodes.has(key)) {
       const classes = new Set();
-      nodes.set(key, { textContent: '', hidden: false, disabled: false, dataset: {}, style: {},
+      nodes.set(key, { textContent: '', innerHTML: '', className: '', hidden: false, disabled: false, dataset: {}, style: {},
+        attrs: {},
+        setAttribute(k, v) { this.attrs[k] = String(v); },
+        getAttribute(k) { return this.attrs[k]; },
+        querySelector() { return null; },
         classList: {
+          add(name) { classes.add(name); },
+          remove(name) { classes.delete(name); },
           toggle(name, value) { if (value) classes.add(name); else classes.delete(name); },
           contains(name) { return classes.has(name); },
         },
       });
+      // This action is intentionally present before the first status render.
+      // Model its actual static DOM rather than forcing production JS to repeat it.
+      if (key === 'hrtech-install-manual') {
+        const button = html.match(/<button\b[^>]*\bid="hrtech-install-manual"[^>]*>([^<]*)<\/button>/);
+        assert.ok(button);
+        nodes.get(key).textContent = button[1].trim();
+        nodes.get(key).hidden = /\bhidden(?:\s|=|$)/.test(button[0].slice(0, button[0].indexOf('>')));
+      }
     }
     return nodes.get(key);
   }
   let copied = 0, copiedReport = '';
   Object.assign(h.context, {
-    document: { getElementById: element, querySelector: element }, HRTECH_UI_VERSION: '4.33',
+    document: { getElementById: element, querySelector: element },
+    HRTECH_UI_VERSION: versionMeta.version,
+    HRTECH_BRIDGE_VERSION: versionMeta.bridgeVersion,
+    __graceTimer: null, __lastRepairError: '', __pinSource: null,
     hrtechCopyInstall() { copied++; },
     hrtechCopyText(text) { copiedReport = text; return true; }, hrtechFoundAgents: () => [],
     hrtechTokenState() {}, hrtechSkills() {}, hrtechRenderSelectedAgentHost() {}, hrtechRequestHost() {}, hrtechAutoUpdate() {},
   });
-  for (const name of ['hrtechReadyConnections', 'hrtechLegacyBridge', 'hrtechPrimaryConnection',
-    'hrtechAssistantNames', 'hrtechConnectionVersions', 'hrtechConnState', 'hrtechRenderRepair',
-    'hrtechDistribution', 'hrtechHasSearchSkill', 'hrtechFileExchangeConfirmed', 'hrtechVersionOlder', 'hrtechFinishRepair', 'hrtechCheckConnection',
-    'hrtechMaintainRepair', 'window.__hrtechConnectionCheckResult',
-    'hrtechSyncBridgeState', 'hrtechCopyDiagnostics', 'hrtechRepair', 'window.__hrtechRepairResult', 'window.executeCode']) {
+  for (const name of ['bunSafeCommand', 'window.executeCode',
+    'hrtechEscHtml', 'hrtechFormatClientName', 'hrtechReadyConnections', 'hrtechLegacyBridge',
+    'hrtechPrimaryConnection', 'hrtechRepairConnection', 'hrtechResumePendingRepair',
+    'hrtechAssistantNames', 'hrtechRawAssistantNames', 'hrtechConnectionVersions',
+    'hrtechDistribution', 'hrtechDistributionLabel', 'hrtechHasSearchSkill', 'hrtechFileExchangeConfirmed',
+    'hrtechVersionOlder', 'scheduleGraceExpiry', 'setUpdateNote', 'hrtechRenderLock',
+    'hrtechComputeState', 'hrtechConnState', 'hrtechRenderRepair',
+    'hrtechFinishRepair', 'hrtechCheckConnection', 'hrtechMaintainRepair',
+    'window.__hrtechConnectionCheckResult', 'hrtechSyncBridgeState', 'hrtechCopyDiagnostics',
+    'hrtechRepair', 'hrtechReclaim', 'window.__hrtechRepairResult']) {
     vm.runInContext(productStatement(name), h.context);
   }
   h.window.__hrtechConnectionChanged = () => h.context.hrtechSyncBridgeState();
@@ -151,6 +179,190 @@ async function settleClient() {
 function helloLegacy(socket, overrides = {}) {
   socket.message({ type: 'SERVER_HELLO', data: { hrtechVersion: '4.27', ...overrides } });
 }
+
+const installCommand = 'curl -fsSL https://raw.githubusercontent.com/artsaverin-star/hr-tech-design/main/install.sh | bash';
+const originalSevenSkills = ['hrtech', 'hrtech-arcadia', 'hrtech-audit', 'hrtech-mobile', 'hrtech-proto-spec', 'hrtech-prototipnitsa', 'hrtech-spec'].map(name => ({ name }));
+function manualInstallHarness(copySucceeds = true) {
+  const h = repairHarness();
+  const clipboard = [], messages = [];
+  h.context.hrtechCopyText = value => { clipboard.push(value); return copySucceeds; };
+  h.context.parent = { postMessage(message, target) { messages.push({ message: JSON.parse(JSON.stringify(message)), target }); } };
+  for (const name of ['HRTECH_INSTALL_CMD', 'hrtechCopyInstall']) vm.runInContext(productStatement(name), h.context);
+  const button = html.match(/<button\b[^>]*\bid="hrtech-install-manual"[^>]*>/)?.[0];
+  assert.ok(button, 'the secondary manual update button must exist');
+  const handler = button.match(/\bonclick="([^"]+)"/)?.[1];
+  assert.ok(handler, 'the secondary action must be explicitly wired');
+  return { ...h, clipboard, messages, clickManual: () => vm.runInContext(handler, h.context) };
+}
+
+test('manual terminal update is visible in the initial markup with a stable label and explicit click handler', () => {
+  const button = html.match(/<button\b[^>]*\bid="hrtech-install-manual"[^>]*>([^<]*)<\/button>/);
+  assert.ok(button);
+  assert.doesNotMatch(button[0].slice(0, button[0].indexOf('>')), /\bhidden(?:\s|=|$)/);
+  assert.match(button[1].trim(), /Терминал|команду/i);
+  assert.match(button[0], /onclick="hrtechCopyInstall\(\)"/);
+});
+
+test('manual terminal update is available for the targeted standalone 4.27 app with all seven original skills', async () => {
+  const h = manualInstallHarness(); finishScan(h.sockets.slice()); await settleClient();
+  const socket = h.sockets[0]; helloLegacy(socket, { distribution: 'app', skills: originalSevenSkills });
+  const button = h.element('hrtech-install-manual');
+  assert.equal(button.hidden, false);
+  assert.equal(button.disabled, false);
+  assert.match(button.textContent, /Терминал/i);
+  h.repair();
+  assert.equal(socket.sent.filter(message => message.type === 'HRTECH_REPAIR').length, 1);
+  assert.equal(h.clipboard.length, 0, 'ordinary repair must not copy an install command');
+  assert.equal(h.messages.length, 0);
+  assert.equal(button.disabled, true, 'do not offer simultaneous update while normal repair is running');
+  socket.message({ type: 'HRTECH_REPAIR_RESULT', data: { finished: true, ok: true, distribution: 'app', skills: originalSevenSkills } });
+  await settleClient();
+  assert.equal(button.hidden, false);
+  assert.equal(button.disabled, false);
+  assert.equal(h.clipboard.length, 0);
+});
+
+test('an identified standalone 4.27 app exposes the manual update before Figma file identification finishes', async () => {
+  let identify;
+  const h = repairHarness({ sendPluginCommand: () => new Promise(resolve => { identify = resolve; }) });
+  finishScan(h.sockets.slice());
+  helloLegacy(h.sockets[0], { distribution: 'app', skills: originalSevenSkills });
+  assert.equal(h.window.__wsGetActiveConnections()[0].fileKey, undefined);
+  const button = h.element('hrtech-install-manual');
+  assert.equal(button.hidden, false);
+  assert.equal(button.disabled, false);
+  assert.match(button.textContent, /Терминал/i);
+  identify({ success: true, fileInfo: { fileKey: 'test-file' } }); await settleClient();
+  assert.equal(button.hidden, false);
+});
+
+test('manual terminal update remains visible for healthy Git, modern and mixed bridge installations', async () => {
+  for (const kind of ['git', 'modern', 'app-before-git', 'app-before-modern']) {
+    const h = manualInstallHarness();
+    const mixed = kind.startsWith('app-before-');
+    finishScan(h.sockets.slice(), mixed ? [9223, 9224] : [9223]); await settleClient();
+    const first = h.sockets[0], target = mixed ? h.sockets[1] : first;
+    if (mixed) helloLegacy(first, { distribution: 'app', skills: originalSevenSkills });
+    if (kind.endsWith('git')) helloLegacy(target, { distribution: 'git', skills: originalSevenSkills });
+    else confirmFile(target, { hrtechVersion: versionMeta.bridgeVersion, bridgeProtocol: 1, distribution: 'terminal', mcpClient: { name: 'codex-mcp-client' }, skills: originalSevenSkills });
+    h.context.hrtechSyncBridgeState();
+    const button = h.element('hrtech-install-manual');
+    assert.equal(button.hidden, false, kind);
+    assert.equal(button.disabled, false, kind);
+    assert.match(button.textContent, /Терминал/i, kind);
+    assert.equal(h.clipboard.length, 0);
+    assert.equal(h.messages.length, 0);
+  }
+});
+
+test('manual terminal update stays visible without a bridge, during pending repair and on pause; only availability changes', () => {
+  const h = manualInstallHarness();
+  const button = h.element('hrtech-install-manual');
+  h.context.hrtechSyncBridgeState();
+  assert.equal(button.hidden, false);
+  assert.equal(button.disabled, false);
+  h.repair();
+  assert.equal(button.hidden, false);
+  assert.equal(button.disabled, true, 'pending repair disables the explicit update action immediately');
+  h.window.__wsDisconnectAll();
+  assert.equal(button.hidden, false);
+  h.window.__wsManualScan();
+  assert.equal(button.hidden, false);
+  assert.equal(button.disabled, false, 'resuming the search enables the action again');
+  assert.match(button.textContent, /команду|Терминал/i);
+  assert.equal(h.clipboard.length, 0);
+  assert.equal(h.messages.length, 0);
+});
+
+test('an explicit manual update click copies only the fixed command and its guidance survives live status refreshes', async () => {
+  for (const kind of ['legacy-app', 'healthy-modern']) {
+    const h = manualInstallHarness(); finishScan(h.sockets.slice()); await settleClient();
+    const socket = h.sockets[0];
+    if (kind === 'legacy-app') helloLegacy(socket, { distribution: 'app', skills: originalSevenSkills });
+    else { helloCheckedBridge(socket); checkedReply(socket); h.context.hrtechSyncBridgeState(); }
+    assert.equal(h.element('hrtech-install-manual').hidden, false, kind);
+    assert.equal(h.element('hrtech-install-manual').disabled, false, kind);
+    h.clickManual();
+    assert.deepEqual(h.clipboard, [installCommand]);
+    assert.deepEqual(h.messages, [{ message: { pluginMessage: { type: 'HRTECH_INSTALL_HINT' } }, target: '*' }]);
+    const note = h.element('hrtech-install-note');
+    assert.match(note.textContent, /скопирован/i);
+    assert.match(note.textContent, /Терминал/);
+    const guidance = note.textContent;
+    for (let i = 0; i < 3; i++) { h.advance(700); h.context.hrtechSyncBridgeState(); }
+    assert.equal(note.textContent, guidance);
+    assert.notEqual(note.hidden, true);
+    assert.equal(socket.sent.filter(message => message.type === 'HRTECH_REPAIR').length, 0, 'copying is a separate explicit action');
+    assert.equal(h.clipboard.length, 1);
+    assert.equal(h.messages.length, 1);
+  }
+});
+
+test('a failed manual copy leaves the complete command visible and does not emit a success toast', async () => {
+  const h = manualInstallHarness(false); finishScan(h.sockets.slice()); await settleClient();
+  helloLegacy(h.sockets[0], { distribution: 'app', skills: originalSevenSkills });
+  h.clickManual();
+  assert.deepEqual(h.clipboard, [installCommand]);
+  const note = h.element('hrtech-install-note');
+  assert.ok(note.textContent.includes(installCommand));
+  assert.match(note.className, /\berr\b/);
+  assert.doesNotMatch(note.textContent, /скопирована|скопировано/i);
+  assert.equal(h.messages.length, 0, 'failed clipboard writes cannot trigger HRTECH_INSTALL_HINT success');
+  const error = note.textContent;
+  for (let i = 0; i < 3; i++) { h.advance(700); h.context.hrtechSyncBridgeState(); }
+  assert.equal(note.textContent, error);
+  assert.notEqual(note.hidden, true);
+});
+
+test('the main connection heading reflects a pending, failed, unidentified or proven modern file exchange', async () => {
+  for (const scenario of ['pending', 'file-failed', 'no-client', 'healthy', 'skill-missing']) {
+    const h = repairHarness(); finishScan(h.sockets.slice()); await settleClient();
+    const socket = h.sockets[0];
+    helloCheckedBridge(socket, scenario === 'no-client' ? { mcpClient: null } : {});
+    if (scenario !== 'pending') checkedReply(socket, undefined,
+      scenario === 'file-failed' ? { fileOk: false }
+        : scenario === 'no-client' ? { client: null, skillAvailable: false }
+          : scenario === 'skill-missing' ? { skillAvailable: false } : {});
+    const title = h.element('bun-connection-title').textContent;
+    assert.notEqual(title, 'Подключение', scenario + ': the card title itself must communicate the actual state');
+    if (scenario === 'healthy' || scenario === 'skill-missing') assert.match(title, /файл подключ[её]н/i, scenario);
+    else {
+      assert.doesNotMatch(title, /файл подключ[её]н|связь с файлом подтвержд[её]на/i, scenario);
+      if (scenario === 'pending') assert.match(title, /проверя|ожида/i);
+      if (scenario === 'file-failed') assert.match(title, /не подтверж|не подключ|нет связи/i);
+      if (scenario === 'no-client') assert.match(title, /ожида.*помощник|жду.*помощник/i);
+    }
+  }
+});
+
+test('the legacy card heading distinguishes an available bridge, a sent file and an actual client roundtrip', async () => {
+  const h = repairHarness(); finishScan(h.sockets.slice()); await settleClient();
+  const socket = h.sockets[0]; helloLegacy(socket, { distribution: 'app', skills: originalSevenSkills });
+  const title = () => h.element('bun-connection-title').textContent;
+  assert.match(title(), /мост.*доступен|ожида/i);
+  assert.doesNotMatch(title(), /файл подключ[её]н|связь.*подтвержд[её]на/i);
+  h.repair();
+  socket.message({ type: 'HRTECH_REPAIR_RESULT', data: { finished: true, ok: true, distribution: 'app', skills: originalSevenSkills } });
+  await settleClient();
+  assert.match(title(), /файл передан|файл отправлен/i);
+  assert.doesNotMatch(title(), /файл подключ[её]н|связь.*подтвержд[её]на/i);
+  socket.message({ id: 'actual-legacy-query', method: 'GET_FILE_INFO', params: {} }); await settleClient();
+  assert.match(title(), /файл подключ[её]н/i);
+  assert.equal(h.context.hrtechAssistantNames().length, 0, 'a factual file title never invents the missing legacy client name');
+});
+
+test('the main card heading drops a previous success on disconnect and displays the paused or offline state', async () => {
+  const h = repairHarness(); finishScan(h.sockets.slice()); await settleClient();
+  const socket = h.sockets[0]; helloCheckedBridge(socket); checkedReply(socket);
+  assert.match(h.element('bun-connection-title').textContent, /файл подключ[её]н/i);
+  h.advance(1); socket.close();
+  assert.doesNotMatch(h.element('bun-connection-title').textContent, /файл подключ[её]н|связь.*подтвержд[её]на/i);
+  h.advance(9000); h.context.hrtechConnState();
+  assert.match(h.element('bun-connection-title').textContent, /не подключ|нет подключ|нет связи/i);
+  h.window.__wsDisconnectAll();
+  assert.match(h.element('bun-connection-title').textContent, /пауз|приостанов/i);
+  assert.equal(h.element('hrtech-install-manual').hidden, false);
+});
 
 test('legacy compatibility is limited to bridge 4.27 without a newer protocol and does not need client identity', () => {
   const h = repairHarness();
@@ -174,7 +386,7 @@ test('legacy HELLO and proactive local identification show availability without 
   const conn = h.window.__wsGetActiveConnections()[0];
   assert.equal(!!conn.legacyFileVerified, false);
   assert.equal(!!conn.fileRegistered, false);
-  assert.equal(h.element('bun-connection-status').dataset.state, 'searching');
+  assert.equal(h.element('bun-connection-status').dataset.state, 'waiting');
   assert.equal(h.element('bun-status-label').textContent, 'Мост 4.27 доступен');
   assert.equal(h.element('hrtech-repair').textContent, 'Починить');
   assert.equal(h.context.hrtechAssistantNames().length, 0);
@@ -199,7 +411,7 @@ test('only a successful GET_FILE_INFO RPC on its legacy socket establishes file 
   assert.equal(h.element('bun-connection-status').dataset.state, 'connected');
   assert.equal(h.context.hrtechAssistantNames().length, 0, 'legacy probe must not invent a client name');
   a.close();
-  assert.equal(h.element('bun-connection-status').dataset.state, 'searching', 'another unverified legacy socket cannot inherit the proof');
+  assert.equal(h.element('bun-connection-status').dataset.state, 'waiting', 'another unverified legacy socket cannot inherit the proof');
 });
 
 test('failed, mismatched, unidentified and modern socket probes cannot set legacy verification', async () => {
@@ -239,15 +451,242 @@ test('repair targets the primary verified connection and does not broadcast or r
   assert.equal(h.copied(), 0);
 });
 
-test('repair without an identified connection offers the command and never sends repair to an unknown listener', async () => {
+const repairRequests = h => h.sockets.flatMap(socket => (socket.sent || []).filter(message => message.type === 'HRTECH_REPAIR'));
+
+test('recovery regression: explicit Repair reclaims a replaced port while background discovery respects its owner', async () => {
+  const h = repairHarness(); finishScan(h.sockets.slice()); await settleClient();
+  const old = h.sockets[0]; helloLegacy(old, { distribution: 'git' });
+  old.close(1000, 'Replaced by same file reconnection');
+  const attempts = () => h.sockets.filter(socket => socket.url.endsWith(':9223'));
+  for (let i = 0; i < 2; i++) {
+    h.intervals[0]();
+    finishScan(h.sockets.filter(socket => socket.readyState === 0), []);
+  }
+  assert.equal(attempts().length, 1, 'background scan must not steal the file from its other plugin window');
+  h.repair(); h.repair();
+  assert.equal(attempts().length, 2, 'an explicit Repair must reopen the previously replaced port');
+  const replacement = attempts().at(-1);
+  finishScan(h.sockets.filter(socket => socket.readyState === 0)); await settleClient();
+  helloLegacy(replacement, { distribution: 'git' }); await settleClient();
+  assert.equal(h.window.__hrtechRepairSocket, replacement);
+  assert.equal(repairRequests(h).length, 1, 'the deferred click must execute once on the recovered socket');
+  assert.equal(old.readyState, 3);
+});
+
+test('recovery regression: explicit Repair preserves pending sockets and live sockets awaiting HELLO or file identity', async () => {
+  for (const phase of ['pending-open', 'awaiting-hello', 'awaiting-file']) {
+    let identify;
+    const h = repairHarness(phase === 'awaiting-file' ? {
+      sendPluginCommand: () => new Promise(resolve => { identify = resolve; }),
+    } : {});
+    const original = h.sockets[0];
+    if (phase !== 'pending-open') { finishScan(h.sockets.slice()); await settleClient(); }
+    if (phase === 'awaiting-file') helloLegacy(original, { distribution: 'git' });
+    const state = original.readyState;
+    h.repair(); h.repair();
+    assert.equal(original.readyState, state, phase + ': manual repair must not close the in-flight handshake');
+    assert.equal(h.sockets.filter(socket => socket.url.endsWith(':9223')).length, 1, phase + ': no replacement candidate');
+    assert.equal(repairRequests(h).length, 0);
+    if (phase === 'pending-open') { finishScan(h.sockets.slice()); await settleClient(); }
+    if (phase === 'awaiting-file') identify({ success: true, fileInfo: { fileKey: 'test-file' } });
+    else helloLegacy(original, { distribution: 'git' });
+    await settleClient();
+    assert.equal(h.window.__hrtechRepairSocket, original);
+    assert.equal(repairRequests(h).length, 1, phase + ': the original socket completes the deferred action once');
+  }
+});
+
+test('recovery regression: a late healthy assistant clears the expired connection notice without replaying Repair', async () => {
+  let available = false;
+  const h = repairHarness({ onSocket(socket) {
+    if (available && socket.url.endsWith(':9223')) { socket.open(); helloCheckedBridge(socket); }
+    else socket.close();
+  } });
+  h.advance(0); h.repair(); h.advance(20000);
+  const expired = h.note();
+  assert.match(expired, /не подключился/);
+  available = true; h.advance(4000); await settleClient();
+  const connection = h.window.__wsGetActiveConnections()[0];
+  assert.ok(connection.fileRegistered);
+  assert.equal(h.note(), expired, 'HELLO and registration alone must not claim a completed roundtrip');
+  checkedReply(connection.ws); h.context.hrtechSyncBridgeState();
+  assert.equal(connection.connectionCheck.fileOk, true);
+  assert.equal(h.element('bun-connection-title').textContent, 'Файл подключён');
+  assert.notEqual(h.note(), expired, 'the successful current-file check must retire the expired connection error');
+  assert.doesNotMatch(h.note(), /не подключился|соединение прервано/i);
+  assert.equal(repairRequests(h).length, 0, 'a later assistant must not revive an expired repair click');
+});
+
+test('recovery regression: verified reconnect clears the departed outcome notice only after a fresh file check', async () => {
+  const h = repairHarness(); finishScan(h.sockets.slice()); await settleClient();
+  const old = h.sockets[0]; helloCheckedBridge(old);
+  const request = await repairedModern(h, old); checkedReply(old, request);
+  old.close();
+  const disconnected = h.note(); assert.match(disconnected, /Соединение прервано/);
+  assert.equal(h.window.__hrtechOutcomeSocket, null);
+  h.advance(1000);
+  const replacement = h.sockets.findLast(socket => socket.url.endsWith(':9223'));
+  replacement.open(); await settleClient(); helloCheckedBridge(replacement);
+  assert.equal(h.note(), disconnected, 'an unverified replacement cannot clear a failed connection notice');
+  checkedReply(replacement); h.context.hrtechSyncBridgeState();
+  assert.equal(h.element('bun-connection-title').textContent, 'Файл подключён');
+  assert.notEqual(h.note(), disconnected, 'fresh proof must retire the departed socket notice');
+  assert.doesNotMatch(h.note(), /соединение прервано|проверить заново/i);
+  assert.equal((replacement.sent || []).some(message => message.type === 'HRTECH_REPAIR'), false);
+});
+
+test('recovery regression: a real legacy file RPC clears an expired notice without inventing MCP identity', async () => {
+  let available = false;
+  const h = repairHarness({ onSocket(socket) {
+    if (available && socket.url.endsWith(':9223')) { socket.open(); helloLegacy(socket, { distribution: 'app' }); }
+    else socket.close();
+  } });
+  h.advance(0); h.repair(); h.advance(20000);
+  const expired = h.note(); available = true; h.advance(4000); await settleClient();
+  const connection = h.window.__wsGetActiveConnections()[0];
+  assert.equal(h.note(), expired, 'local FILE_INFO is not proof of an assistant roundtrip');
+  connection.ws.message({ id: 'late-legacy-probe', method: 'GET_FILE_INFO', params: {} }); await settleClient();
+  assert.equal(connection.legacyFileVerified, true);
+  assert.notEqual(h.note(), expired);
+  assert.doesNotMatch(h.note(), /не подключился|соединение прервано/i);
+  assert.equal(connection.serverInfo.mcpClient, undefined);
+  assert.equal(repairRequests(h).length, 0);
+});
+
+test('recovery regression: another live session check cannot erase an actual repair script failure', async () => {
+  const h = repairHarness(); finishScan(h.sockets.slice(), [9223, 9224]); await settleClient();
+  const [a, b] = h.sockets;
+  helloCheckedBridge(a); helloCheckedBridge(b); checkedReply(a); checkedReply(b);
+  h.repair(h.window.__wsGetActiveConnections().find(connection => connection.ws === a));
+  a.message({ type: 'HRTECH_REPAIR_RESULT', data: { finished: true, ok: false } });
+  const failure = h.note(); assert.match(failure, /Не удалось восстановить/);
+  b.message({ type: 'HRTECH_MCP_STATUS', data: { client: { name: 'Codex', version: 'new-handshake' } } });
+  checkedReply(b); h.context.hrtechSyncBridgeState();
+  assert.equal(h.note(), failure, 'only transient connectivity notices may be cleared by another healthy connection');
+});
+
+test('manual repair waits for HELLO without copying a command and sends once despite repeated clicks and notifications', async () => {
   const h = repairHarness();
-  finishScan(h.sockets.slice());
+  h.repair(); h.repair();
+  assert.equal(h.copied(), 0);
+  assert.equal(repairRequests(h).length, 0);
+  assert.match(h.note(), /жду|ожида|ищ|подключ/i);
+  finishScan(h.sockets.filter(socket => socket.readyState === 0));
   await settleClient();
+  const socket = h.window.__wsGetActiveConnections()[0].ws;
+  assert.ok(socket.sent.some(message => message.type === 'FILE_INFO'));
+  assert.equal(repairRequests(h).length, 0, 'a listener with no HELLO is not a repair target');
+  h.window.__hrtechRepairResult({ finished: true, ok: true, skills: searchSkills }, socket);
+  assert.equal(repairRequests(h).length, 0, 'an unsolicited result cannot consume the deferred action');
+  helloLegacy(socket, { distribution: 'git' });
+  await settleClient();
+  assert.equal(repairRequests(h).length, 1);
+  assert.equal(socket.sent.filter(message => message.type === 'HRTECH_REPAIR').length, 1);
+  assert.equal(h.window.__hrtechRepairSocket, socket);
+  h.repair(); h.context.hrtechSyncBridgeState(); helloLegacy(socket, { distribution: 'git' });
+  assert.equal(repairRequests(h).length, 1, 'manual, HELLO and periodic updates cannot replay the pending request');
+  assert.equal(h.copied(), 0);
+});
+
+test('manual repair waits for file identity when HELLO arrives first and resumes once on its real FILE_INFO send', async () => {
+  let identify;
+  const h = repairHarness({ sendPluginCommand: () => new Promise(resolve => { identify = resolve; }) });
+  finishScan(h.sockets.slice());
+  const socket = h.sockets[0]; helloLegacy(socket, { distribution: 'git' });
+  h.repair(); h.repair();
+  assert.equal(repairRequests(h).length, 0);
+  assert.equal(h.copied(), 0);
+  identify({ success: true, fileInfo: { fileKey: 'test-file' } });
+  await settleClient();
+  assert.equal(repairRequests(h).length, 1);
+  assert.equal(socket.sent.filter(message => message.type === 'FILE_INFO').length, 1);
+  assert.ok(socket.sent.findIndex(message => message.type === 'FILE_INFO') < socket.sent.findIndex(message => message.type === 'HRTECH_REPAIR'));
+  h.context.hrtechSyncBridgeState();
+  assert.equal(repairRequests(h).length, 1);
+});
+
+test('a deferred manual repair expires at twenty seconds and later transports cannot revive it', async () => {
+  const h = repairHarness(); h.repair();
+  h.advance(10000); h.repair();
+  h.advance(9999);
+  assert.equal(repairRequests(h).length, 0);
+  assert.equal(h.element('hrtech-repair').disabled, true, 'the full 20-second wait remains active');
+  assert.match(h.note(), /жду|ожида|ищ|подключ/i);
+  h.advance(1);
+  assert.equal(!!h.window.__hrtechRepairBusy, false);
+  assert.equal(h.element('hrtech-repair').disabled, false);
+  assert.match(h.note(), /не найден|не подключ|не дожд|не появился|истек|истёк|не ответ|не удалось|повтор/i);
+  const expiredNote = h.note();
+  const previous = h.sockets.length;
+  h.window.__wsManualScan(); finishScan(h.sockets.slice(previous)); await settleClient();
+  const socket = h.window.__wsGetActiveConnections()[0].ws;
+  helloLegacy(socket, { distribution: 'git' }); await settleClient();
+  assert.equal(repairRequests(h).length, 0);
+  h.window.__hrtechRepairResult({ finished: true, ok: true, skills: searchSkills }, socket);
+  assert.equal(h.note(), expiredNote, 'a late unsolicited success cannot replace the expired operation');
+  assert.equal(h.copied(), 0);
+});
+
+test('pause cancels deferred repair and a click while paused cannot unpause or queue it', async () => {
+  for (const pendingFirst of [true, false]) {
+    const h = repairHarness();
+    if (pendingFirst) h.repair();
+    h.window.__wsDisconnectAll();
+    if (!pendingFirst) h.repair();
+    assert.equal(h.window.__wsIsPaused(), true);
+    assert.equal(!!h.window.__hrtechRepairBusy, false);
+    assert.equal(repairRequests(h).length, 0);
+    assert.equal(h.copied(), 0);
+    const previous = h.sockets.length;
+    h.window.__wsManualScan(); finishScan(h.sockets.slice(previous)); await settleClient();
+    const socket = h.window.__wsGetActiveConnections()[0].ws;
+    helloLegacy(socket, { distribution: 'git' }); await settleClient();
+    h.advance(20000);
+    assert.equal(repairRequests(h).length, 0, 'manual resume cannot revive a canceled repair');
+  }
+});
+
+test('manual repair prefers a registered MCP bridge, then legacy Git ahead of an earlier standalone app', async () => {
+  for (const withMcp of [false, true]) {
+    const h = repairHarness(); finishScan(h.sockets.slice(), withMcp ? [9223, 9224, 9225] : [9223, 9224]); await settleClient();
+    const [app, git, modern] = h.sockets;
+    helloLegacy(app, { distribution: 'app' }); helloLegacy(git, { distribution: 'git' });
+    // An earlier verified app is still unable to receive new bundled skills.
+    app.message({ id: 'already-used-app', method: 'GET_FILE_INFO', params: {} }); await settleClient();
+    if (withMcp) confirmFile(modern, { hrtechVersion: '4.33', bridgeProtocol: 1, distribution: 'terminal', mcpClient: { name: 'codex-mcp-client' } });
+    h.repair(); h.repair();
+    const target = withMcp ? modern : git;
+    assert.equal(h.window.__hrtechRepairSocket, target);
+    assert.equal(repairRequests(h).length, 1);
+    assert.equal(target.sent.filter(message => message.type === 'HRTECH_REPAIR').length, 1);
+    assert.equal(app.sent.filter(message => message.type === 'HRTECH_REPAIR').length, 0);
+    assert.equal(h.copied(), 0);
+  }
+});
+
+test('manual repair excludes nonlocal transports and a legacy Git bridge for another file', async () => {
+  const h = repairHarness(); finishScan(h.sockets.slice(), [9223, 9224, 9225]); await settleClient();
+  const [app, sameFile, otherFile] = h.sockets;
+  helloLegacy(app, { distribution: 'app' }); helloLegacy(sameFile, { distribution: 'git' }); helloLegacy(otherFile, { distribution: 'git' });
+  app.message({ id: 'known-current-file', method: 'GET_FILE_INFO', params: {} }); await settleClient();
+  const active = h.window.__wsGetActiveConnections();
+  const appConnection = active.find(c => c.ws === app);
+  const sameConnection = active.find(c => c.ws === sameFile);
+  const otherConnection = active.find(c => c.ws === otherFile);
+  otherConnection.fileKey = 'another-file';
+  const cloudMessages = [];
+  const cloud = { fileKey: 'test-file', fileRegistered: true,
+    serverInfo: { hrtechVersion: '4.33', bridgeProtocol: 1, mcpClient: { name: 'Codex' } },
+    ws: { readyState: 1, send: data => cloudMessages.push(JSON.parse(data)) },
+  };
+  h.window.__wsGetActiveConnections = () => [cloud, appConnection, otherConnection, sameConnection];
+  h.repair(cloud);
+  assert.equal(cloudMessages.length, 0, 'an explicit nonlocal target is also refused');
   h.repair();
-  assert.equal(h.copied(), 1);
-  assert.equal(h.sockets[0].sent.filter(message => message.type === 'HRTECH_REPAIR').length, 0);
-  h.window.__hrtechRepairResult({ finished: true, ok: true }, h.sockets[0]);
-  assert.equal(h.note(), '', 'unsolicited success from an unidentified listener is ignored');
+  assert.equal(h.window.__hrtechRepairSocket, sameFile);
+  assert.equal(repairRequests(h).length, 1);
+  assert.equal(otherFile.sent.filter(message => message.type === 'HRTECH_REPAIR').length, 0);
+  assert.equal(cloudMessages.length, 0);
 });
 
 test('successful legacy repair refreshes only the initiating socket and waits for file identification', async () => {
@@ -275,7 +714,8 @@ test('successful legacy repair refreshes only the initiating socket and waits fo
   assert.notEqual(h.note(), 'Настройки восстановлены.', 'script exit alone is not file identification');
   pending({ success: true, fileInfo: { fileKey: 'test-file' } });
   await done;
-  assert.equal(h.note(), 'Настройки восстановлены. Наличие умения поиска не подтверждено.');
+  assert.match(h.note(), /файл[^.]*передан|файл[^.]*отправлен/i);
+  assert.match(h.note(), /не подтверж|не сообщил[^.]*умени/i);
   assert.equal(h.window.__hrtechRepairBusy, false);
   assert.equal(h.window.__hrtechRepairSocket, null);
   assert.equal(a.sent.filter(message => message.type === 'FILE_INFO').length, beforeA);
@@ -637,7 +1077,8 @@ test('FILE_INFO registers initial and refreshed selection, and remains compatibl
   assert.deepEqual(server.getCurrentSelection().nodes, selected);
   assert.equal(server.getCurrentSelection().count, 1);
   assert.equal(server.getCurrentSelection().page, 'Page');
-  assert.deepEqual(first.sent.at(-1), { type: 'FILE_REGISTERED', data: { fileKey: 'A', fileName: 'Design' } });
+  assert.deepEqual(first.sent.find(m => m.type === 'FILE_REGISTERED'), { type: 'FILE_REGISTERED', data: { fileKey: 'A', fileName: 'Design' } });
+  assert.deepEqual(first.sent.find(m => m.type === 'PIN_STATE'), { type: 'PIN_STATE', data: { pinned: false, fileKey: 'A', fileName: 'Design', pinSource: null } });
 
   const replacement = socket();
   server.handleMessage({ type: 'FILE_INFO', data: { fileKey: 'A', fileName: 'Design', currentPage: 'Page 2', selection: [], selectionCount: 0 } }, replacement);
@@ -736,41 +1177,64 @@ test('MCP initialization updates only its own live connection and ignores late e
   assert.equal(h.window.__wsGetActiveConnections()[0].serverInfo.mcpClient, null);
 });
 
-test('connection summary includes every bridge version and only confirmed MCP names', () => {
-  const helpers = html.slice(html.indexOf('    function hrtechAssistantNames()'), html.indexOf('    // A transport link and a completed MCP handshake'));
-  const context = { hrtechReadyConnections: () => [
-    { port: 9223, fileRegistered: true, serverInfo: { hrtechVersion: '4.27', mcpClient: { name: 'Codex' } } },
+test('connection summary includes every bridge version and friendly confirmed MCP names', () => {
+  const context = vm.createContext({ hrtechReadyConnections: () => [
+    { port: 9223, fileRegistered: true, serverInfo: { hrtechVersion: '5.0.0', mcpClient: { name: 'codex-mcp-client' } } },
     { port: 9224, serverInfo: { hrtechVersion: '4.25' } },
-    { port: 9225, fileRegistered: true, serverInfo: { hrtechVersion: '4.27', mcpClient: { name: 'Codex' } } },
-  ] };
-  vm.createContext(context);
-  vm.runInContext(helpers, context);
-  assert.equal(vm.runInContext('hrtechAssistantNames().join(",")', context), 'Codex');
-  const versions = vm.runInContext('hrtechConnectionVersions()', context);
-  assert.match(versions, /Codex v4.27 \(порт 9223\)/);
-  assert.match(versions, /Мост v4.25 \(порт 9224\)/);
+    { port: 9225, fileRegistered: true, serverInfo: { hrtechVersion: '5.0.0', mcpClient: { name: 'antigravity-client' } } },
+    { port: 9226, fileRegistered: true, serverInfo: { hrtechVersion: '5.0.0', mcpClient: { name: 'cursor-vscode' } } },
+    { port: 9227, fileRegistered: true, serverInfo: { hrtechVersion: '5.0.0', mcpClient: { name: 'claude-code' } } },
+  ] });
+  for (const name of ['hrtechFormatClientName', 'hrtechAssistantNames', 'hrtechConnectionVersions']) {
+    vm.runInContext(productStatement(name), context);
+  }
+  assert.equal(context.hrtechAssistantNames().join(','), 'Codex,Antigravity,Cursor,Claude Code');
+  const versions = context.hrtechConnectionVersions();
+  assert.match(versions, /Codex v5\.0\.0 \(:9223\)/);
+  assert.match(versions, /Мост v4\.25 \(:9224\)/);
+  assert.match(versions, /Antigravity v5\.0\.0 \(:9225\)/);
 });
 
 test('published plugin updates an older packaged bridge once, without touching git installs or newer bridges', () => {
- const start=html.indexOf('    function hrtechVersionOlder('), end=html.indexOf('    function hrtechRenderRepair()',start);
  const requests=[],window={};let connections=[];
- const context={window,HRTECH_UI_VERSION:'4.30',hrtechReadyConnections:()=>connections,hrtechRepair:c=>requests.push(c)};
- vm.createContext(context);vm.runInContext(html.slice(start,end),context);
- const attempt=()=>vm.runInContext('hrtechAutoUpdate()',context);
+ const context=vm.createContext({window,HRTECH_UI_VERSION:'5.0.0',HRTECH_BRIDGE_VERSION:'5.0.0',hrtechReadyConnections:()=>connections,hrtechRepair:c=>requests.push(c)});
+ for (const name of ['hrtechVersionOlder', 'hrtechAutoUpdate']) vm.runInContext(productStatement(name), context);
+ const attempt=()=>context.hrtechAutoUpdate();
  const connection=(version,distribution='terminal',client={name:'Codex'})=>({fileKey:'test-file',serverInfo:{hrtechVersion:version,distribution,bridgeProtocol:1,mcpClient:client}});
- const unidentified=connection('4.29');delete unidentified.fileKey;connections=[unidentified];attempt();assert.equal(requests.length,0);
- for(const candidate of [connection('4.30'),connection('4.31'),connection('4.29','git'),connection('4.29','terminal',null)]){connections=[candidate];attempt();}
+ const unidentified=connection('4.33');delete unidentified.fileKey;connections=[unidentified];attempt();assert.equal(requests.length,0);
+ for(const candidate of [connection('5.0.0'),connection('5.1.0'),connection('4.33','git'),connection('4.33','terminal',null)]){connections=[candidate];attempt();}
  assert.equal(requests.length,0);
- const eligible=connection('4.29');connections=[eligible];attempt();attempt();
+ const eligible=connection('4.33');connections=[eligible];attempt();attempt();
  assert.equal(requests.length,1);assert.equal(requests[0],eligible);
  window.__hrtechRepairBusy=true;connections=[connection('4.28')];attempt();assert.equal(requests.length,1);
- assert.equal(vm.runInContext("hrtechVersionOlder('4.9','4.30')",context),true);
- assert.equal(vm.runInContext("hrtechVersionOlder('broken','4.30')",context),false);
+ assert.equal(context.hrtechVersionOlder('4.9','4.30'),true);
+ assert.equal(context.hrtechVersionOlder('4.37','5.0.0'),true);
+ assert.equal(context.hrtechVersionOlder('broken','5.0.0'),false);
+});
+
+test('plugin-only 4.34 release targets bridge 4.33 and does not trigger an update loop for an already current engine', () => {
+  const requests = [];
+  let connections = [];
+  const context = vm.createContext({ window: {}, HRTECH_UI_VERSION: '4.34', HRTECH_BRIDGE_VERSION: '4.33',
+    hrtechReadyConnections: () => connections, hrtechRepair: connection => requests.push(connection),
+  });
+  for (const name of ['hrtechVersionOlder', 'hrtechAutoUpdate']) vm.runInContext(productStatement(name), context);
+  const attempt = () => context.hrtechAutoUpdate();
+  const bridge = (version, distribution) => ({ fileKey: 'test-file', serverInfo: {
+    hrtechVersion: version, distribution, bridgeProtocol: 1, mcpClient: { name: 'codex-mcp-client' },
+  } });
+  for (const candidate of [bridge('4.33', 'terminal'), bridge('4.33', 'app'), bridge('4.34', 'app'), bridge('4.32', 'git')]) {
+    connections = [candidate]; attempt(); attempt();
+  }
+  assert.equal(requests.length, 0, 'a newer plugin UI is not an available engine update');
+  const outdated = bridge('4.32', 'terminal'); connections = [outdated]; attempt(); attempt();
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0], outdated);
 });
 
 const searchSkills = [{ name: 'hrtech-figma-search' }];
 function helloCheckedBridge(socket, overrides = {}) {
-  confirmFile(socket, { hrtechVersion: '4.33', bridgeProtocol: 1, repairCheck: true,
+  confirmFile(socket, { hrtechVersion: versionMeta.bridgeVersion, bridgeProtocol: 1, repairCheck: true,
     distribution: 'terminal', mcpClient: { name: 'Codex', version: '1' }, skills: searchSkills, ...overrides });
 }
 function checkRequest(socket) { return socket.sent.findLast(m => m.type === 'HRTECH_CHECK_CONNECTION'); }
@@ -856,8 +1320,10 @@ test('modern check timeout ignores late success and copied diagnostics retain th
   h.advance(10000);
   assert.equal(h.window.__hrtechRepairBusy, false);
   assert.match(h.note(), /не ответил на проверку/);
+  assert.match(h.element('bun-connection-title').textContent, /связь с файлом не подтвержд[её]на/i, 'the main heading updates on timeout without waiting for the periodic refresh');
   checkedReply(socket, request);
   assert.match(h.note(), /не ответил на проверку/);
+  assert.match(h.element('bun-connection-title').textContent, /связь с файлом не подтвержд[её]на/i, 'late success cannot restore a successful main heading');
   assert.equal(h.element('hrtech-repair').textContent, 'Починить');
   const report = h.report();
   assert.match(report, /Установка: порт 9223: terminal/);
@@ -881,28 +1347,86 @@ test('a client initialized after the first automatic check receives one new chec
   assert.match(h.report(), /Обмен с файлом: подтверждён/);
 });
 
-test('packaged legacy repair names the missing search skill, while Git reports actual installation without inventing a probe', async () => {
-  for (const distribution of ['app', 'git']) {
+test('legacy repair reports a sent file independently of search availability and uses only the completed reply skill list', async () => {
+  for (const { distribution, helloSkills, completedSkills, expected, progressSkills } of [
+    { distribution: 'git', helloSkills: [], completedSkills: searchSkills, expected: 'installed' },
+    { distribution: 'git', helloSkills: searchSkills, completedSkills: [], expected: 'missing' },
+    { distribution: 'app', helloSkills: searchSkills, completedSkills: [], expected: 'missing' },
+    { distribution: 'git', helloSkills: searchSkills, completedSkills: undefined, expected: 'unknown' },
+    { distribution: 'git', helloSkills: [], completedSkills: undefined, expected: 'unknown', progressSkills: searchSkills },
+    { distribution: 'git', helloSkills: searchSkills, completedSkills: { name: 'hrtech-figma-search' }, expected: 'unknown' },
+  ]) {
     const h = repairHarness(); finishScan(h.sockets.slice()); await settleClient();
-    const socket = h.sockets[0]; helloLegacy(socket, { skills: [] });
+    const socket = h.sockets[0]; helloLegacy(socket, { skills: helloSkills });
     socket.message({ type: 'HRTECH_HOST_STATUS', data: { distribution } });
+    const before = socket.sent.filter(message => message.type === 'FILE_INFO').length;
     h.repair();
+    if (progressSkills) socket.message({ type: 'HRTECH_REPAIR_RESULT', data: { started: true, skills: progressSkills } });
     socket.message({ type: 'HRTECH_REPAIR_RESULT', data: { finished: true, ok: true, distribution,
-      skills: distribution === 'git' ? searchSkills : [] } });
+      ...(completedSkills === undefined ? {} : { skills: completedSkills }) } });
     await settleClient();
+    const conn = h.window.__wsGetActiveConnections()[0];
     assert.equal(h.window.__hrtechRepairBusy, false);
     assert.equal(checkRequest(socket), undefined);
     assert.equal(h.copied(), 0);
-    assert.doesNotMatch(h.note(), /Связь с файлом подтверждена|Терминал|установщик|введите/);
-    assert.match(h.note(), distribution === 'app' ? /В пакете 4.27 нет умения поиска/ : /Мост отвечает. Умение поиска установлено/);
-    assert.match(h.report(), new RegExp('Установка: порт 9223: ' + distribution));
-    assert.match(h.report(), distribution === 'app' ? /Обмен с файлом: ожидает подтверждения/ : /Файл передан мосту. Запроса помощника ещё не было/);
-    if (distribution === 'git') {
-      h.context.hrtechSyncBridgeState();
-      assert.equal(h.element('bun-status-label').textContent, 'Мост готов к работе');
-      assert.equal(h.context.hrtechAssistantNames().length, 0);
+    assert.equal(socket.sent.filter(message => message.type === 'FILE_INFO').length, before + 1);
+    assert.equal(!!conn.legacyFileVerified, false);
+    assert.equal(conn.serverInfo.mcpClient, undefined);
+    assert.equal(h.context.hrtechAssistantNames().length, 0);
+    assert.doesNotMatch(h.note(), /Связь с файлом подтверждена|установщик|введите/);
+    if (distribution === 'git') assert.doesNotMatch(h.note(), /Терминал/);
+    assert.match(h.note(), /файл[^.]*передан|файл[^.]*отправлен/i, `${distribution}/${expected}: local file transmission is its own fact`);
+    assert.doesNotMatch(h.note(), /(?:Codex|Claude|помощник|клиент)[^.]*подключ[её]н/i);
+    if (expected === 'installed') assert.match(h.note(), /(?:поиск|умени)[^.]*(?:установлен|найден)|(?:установлен|найден|наш[её]л)[^.]*поиск/i);
+    else {
+      assert.match(h.note(), /не найден|не наш[её]л|не подтверж|отсутств|нет умения|нужно обновить|для установки поиска|не сообщил[^.]*умени/i);
+      assert.doesNotMatch(h.note(), /умение поиска установлено|умение поиска найдено|мост наш[её]л умение поиска/i, 'HELLO or a progress reply cannot supply the completed repair result');
     }
+    if (distribution === 'app') assert.match(h.note(), /пакет|автоном|4\.27/i);
+    assert.match(h.report(), new RegExp('Установка: порт 9223: ' + distribution));
+    assert.match(h.report(), /файл[^\n]*передан|файл[^\n]*отправлен/i);
+    assert.doesNotMatch(h.report(), /Обмен с файлом: подтвержд[её]н/);
   }
+});
+
+test('legacy repair preserves an actual earlier file roundtrip without inventing client identity', async () => {
+  const h = repairHarness(); finishScan(h.sockets.slice()); await settleClient();
+  const socket = h.sockets[0]; helloLegacy(socket, { distribution: 'git' });
+  socket.message({ id: 'actual-earlier-query', method: 'GET_FILE_INFO', params: {} }); await settleClient();
+  const conn = h.window.__wsGetActiveConnections()[0];
+  assert.equal(conn.legacyFileVerified, true);
+  h.repair();
+  socket.message({ type: 'HRTECH_REPAIR_RESULT', data: { finished: true, ok: true, distribution: 'git', skills: searchSkills } });
+  await settleClient();
+  assert.equal(conn.legacyFileVerified, true, 'repair must not erase real proof for the same live socket and file');
+  assert.equal(conn.serverInfo.mcpClient, undefined);
+  assert.equal(h.context.hrtechAssistantNames().length, 0);
+  assert.match(h.report(), /Обмен с файлом: подтвержд[её]н/);
+  assert.match(h.note(), /файл[^.]*передан|файл[^.]*отправлен/i);
+});
+
+test('the real skill renderer shows the search example only for the current live connection with search installed', async () => {
+  const h = repairHarness();
+  for (const name of ['hrtechOffline', 'hrtechSkills']) vm.runInContext(productStatement(name), h.context);
+  const render = () => { h.context.hrtechSkills(); return h.element('bun-figma-search-example').hidden; };
+  assert.equal(render(), true, 'no connection has no installed search example');
+  finishScan(h.sockets.slice(), [9223, 9224]); await settleClient();
+  const [app, git] = h.sockets;
+  helloLegacy(app, { distribution: 'app', skills: searchSkills });
+  helloLegacy(git, { distribution: 'git', skills: [] });
+  assert.equal(render(), false);
+  h.repair(h.window.__wsGetActiveConnections().find(c => c.ws === app));
+  app.message({ type: 'HRTECH_REPAIR_RESULT', data: { finished: true, ok: true, distribution: 'app', skills: [] } });
+  await settleClient();
+  assert.equal(render(), true, 'a fresh app result removes a stale HELLO example');
+  h.repair(h.window.__wsGetActiveConnections().find(c => c.ws === git));
+  git.message({ type: 'HRTECH_REPAIR_RESULT', data: { finished: true, ok: true, distribution: 'git', skills: searchSkills } });
+  await settleClient();
+  assert.equal(render(), false, 'the updated Git connection is current and exposes its installed search');
+  git.close();
+  assert.equal(render(), true, 'the remaining app cannot inherit search availability from a disconnected Git bridge');
+  app.close();
+  assert.equal(render(), true);
 });
 
 test('managed modern repair waits for its supervisor handover and validates the replacement without disturbing another assistant', async () => {
@@ -1051,4 +1575,47 @@ test('failed legacy execution or a changed/disconnected file cannot acquire proo
     assert.equal(!!conn.legacyFileVerified, false, scenario);
     assert.doesNotMatch(h.report(), /Обмен с файлом: подтверждён/);
   }
+});
+
+test('replaced tab shows explicit state and one-click reclaim restores the file connection', async () => {
+  const h = repairHarness(); finishScan(h.sockets.slice()); await settleClient();
+  const socket = h.sockets[0]; helloCheckedBridge(socket); checkedReply(socket);
+  socket.close(1000, 'Replaced by same file reconnection');
+  assert.deepEqual(Array.from(h.window.__wsGetReplacedPorts()), [9223]);
+  assert.equal(h.element('bun-connection-title').textContent, 'Открыто в другой вкладке');
+  assert.equal(h.element('hrtech-reclaim').hidden, false);
+  const before = h.sockets.length;
+  h.context.hrtechReclaim();
+  assert.deepEqual(Array.from(h.window.__wsGetReplacedPorts()), []);
+  finishScan(h.sockets.slice(before)); await settleClient();
+  const next = h.window.__wsGetActiveConnections()[0].ws;
+  helloCheckedBridge(next); checkedReply(next);
+  assert.equal(h.element('bun-connection-title').textContent, 'Файл подключён');
+  assert.equal(h.element('hrtech-reclaim').hidden, true);
+});
+
+test('repair failure surfaces redacted errorDetail in both the UI note and diagnostics report', async () => {
+  const h = repairHarness(); finishScan(h.sockets.slice()); await settleClient();
+  const socket = h.sockets[0]; helloCheckedBridge(socket); checkedReply(socket);
+  h.repair();
+  socket.message({ type: 'HRTECH_REPAIR_RESULT', data: { finished: true, ok: false, errorDetail: 'connect-mcp: не удалось подключить Codex' } });
+  assert.match(h.note(), /connect-mcp: не удалось подключить Codex/);
+  assert.match(h.report(), /Последняя ошибка обновления: connect-mcp: не удалось подключить Codex/);
+});
+
+test('PIN_STATE updates the lock switch and respects tool-owned session locks', async () => {
+  const h = repairHarness();
+  for (const name of ['hrtechSendPin', 'hrtechToggleLock', 'window.__hrtechSetLock']) {
+    vm.runInContext(productStatement(name), h.context);
+  }
+  finishScan(h.sockets.slice()); await settleClient();
+  const socket = h.sockets[0]; helloCheckedBridge(socket); checkedReply(socket);
+  h.context.hrtechToggleLock();
+  assert.equal(h.window.__hrtechLocked, true);
+  assert.equal(h.element('hrtech-lock-toggle').getAttribute('aria-pressed'), 'true');
+  assert.ok(socket.sent.some(m => m.type === 'PIN_FILE'));
+  socket.message({ type: 'PIN_STATE', data: { pinned: true, pinSource: 'tool' } });
+  assert.equal(h.element('hrtech-lock-toggle').disabled, true);
+  h.context.hrtechToggleLock();
+  assert.equal(h.window.__hrtechLocked, true, 'UI click must not unlock a tool-owned session pin');
 });

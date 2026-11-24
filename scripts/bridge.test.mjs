@@ -1,6 +1,5 @@
 // Регрессия того, что осталось продуктом после сноса конвейера очереди (4.13):
-// мост Figma↔помощник, замок файла и установка/линковка знаний.
-// Тесты очереди удалены вместе с самой очередью — здесь их наследники.
+// мост Figma↔помощник, замок файла, проверка подключения и установка/линковка знаний.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
@@ -9,6 +8,7 @@ import vm from 'node:vm';
 import { EventEmitter } from 'node:events';
 import ts from 'typescript';
 
+const versionMeta = JSON.parse(fs.readFileSync(new URL('../bulochka.version.json', import.meta.url), 'utf8'));
 const setupSource = fs.readFileSync(new URL('../setup.sh', import.meta.url), 'utf8');
 const installSource = fs.readFileSync(new URL('../install.sh', import.meta.url), 'utf8');
 const repairSource = fs.readFileSync(new URL('./repair.sh', import.meta.url), 'utf8');
@@ -26,7 +26,10 @@ test('bridge and personal agent protocol propagate immutable fileKey', () => {
     assert.match(writeToolsSource, /executeCodeViaUI\([\s\S]*?Math\.min\(timeout, 300000\),[\s\S]*?fileKey/);
     assert.match(websocketConnectorSource, /executeCodeViaUI\(code: string, timeoutMs = 5000, fileKey\?: string\)/);
     assert.match(websocketConnectorSource, /sendCommand\([\s\S]*?'EXECUTE_CODE'[\s\S]*?fileKey/);
+    assert.doesNotMatch(websocketConnectorSource, /\/tmp\/hrtech-exec\.log/);
     assert.match(localServerSource, /if \(fileKey && wasPinned !== fileKey\)/);
+    assert.match(localServerSource, /process\.stdin\.on\("end"/);
+    assert.match(localServerSource, /figmaTokenUpdated/);
     assert.match(hrtechCommandSource, /figma_pin_file\(\{fileKey\}\)/);
     assert.doesNotMatch(hrtechCommandSource, /figma_pin_file\(\{\}\)/);
     assert.match(hrtechCommandSource, /Call `figma_list_open_files`\. If exactly one file is connected/);
@@ -66,26 +69,24 @@ test('a pinned MCP session cannot drift when another product connects or is navi
     );
 });
 
-test('setup wires the bridge and knowledge for every supported agent', () => {
-    // Помощник может быть любым из поддерживаемых: мост и умения обязаны доезжать до обоих,
-    // иначе у половины команды установка молча не работает.
-    // Сама регистрация MCP живёт в connect-mcp.sh — её зовут и setup.sh, и кнопка «Обновить».
+test('setup wires the bridge and knowledge for every supported agent (Codex, Claude, Antigravity, Cursor)', () => {
     assert.match(setupSource, /scripts\/connect-mcp\.sh/);
     assert.match(connectMcpSource, /"\$CODEX_BIN" mcp add figma-hrtech/);
     assert.match(connectMcpSource, /configure-claude-desktop\.mjs" --client cli/);
+    assert.match(connectMcpSource, /configure-claude-desktop\.mjs" --client antigravity/);
+    assert.match(connectMcpSource, /configure-claude-desktop\.mjs" --client cursor/);
+    assert.match(connectMcpSource, /configure-claude-desktop\.mjs" --client codex-toml/);
     assert.doesNotMatch(connectMcpSource, /"\$CLAUDE_BIN" mcp remove/);
-    // Официальный установщик Codex CLI кладёт бинарь в ~/.local/bin — без этого пути
-    // установка молча пропускает Codex и дизайнер остаётся без моста.
-    assert.match(agentPathsSource, /\$HOME\/\.local\/bin\/codex/);
-    assert.match(agentPathsSource, /\/Applications\/Codex\.app\/Contents\/Resources\/codex/);
-    assert.match(agentPathsSource, /\/Applications\/ChatGPT\.app\/Contents\/Resources\/codex/);
-    // Codex add — upsert. Ошибка add не должна стирать ранее рабочую настройку.
     assert.doesNotMatch(connectMcpSource, /"\$CODEX_BIN" mcp remove/);
-    // bash 3.2 (штатный на macOS) падает на "${ARR[@]}" с пустым массивом под set -u.
     assert.doesNotMatch(connectMcpSource, /^set -u/m);
-    assert.match(setupSource, /if \[ -z "\$CODEX_BIN" \] && \[ -z "\$CLAUDE_BIN" \] && \[ -z "\$\{CLAUDE_DESKTOP_APP:-\}" \]; then/);
+    assert.match(agentPathsSource, /\$HOME\/\.local\/bin\/codex/);
+    assert.match(agentPathsSource, /Codex\.app\/Contents\/Resources\/codex/);
+    assert.match(agentPathsSource, /ChatGPT\.app\/Contents\/Resources\/codex-cli\/CodexCLI\.app\/Contents\/MacOS\/codex/);
+    assert.match(agentPathsSource, /Antigravity\.app/);
+    assert.match(agentPathsSource, /Cursor\.app/);
+    assert.match(setupSource, /ANTIGRAVITY_DETECTED/);
+    assert.match(setupSource, /CURSOR_DETECTED/);
     assert.match(setupSource, /scripts\/link-knowledge\.sh/);
-    // Codex CLI ставим только когда помощника нет вообще — не доустанавливать второго агента.
     assert.doesNotMatch(installSource, /brew install|npm install -g|xcode-select --install/);
     assert.match(installSource, /bootstrap-package\.mjs/);
     for (const source of [setupSource, connectMcpSource]) {
@@ -94,12 +95,12 @@ test('setup wires the bridge and knowledge for every supported agent', () => {
     assert.match(linkKnowledgeSource, /CODEX_SKILLS_ROOT="\$HOME\/\.agents\/skills"/);
     assert.match(linkKnowledgeSource, /CLAUDE_CONFIG_ROOT="\$\{CLAUDE_CONFIG_DIR:-\$HOME\/\.claude\}"/);
     assert.match(linkKnowledgeSource, /CLAUDE_SKILLS_ROOT="\$CLAUDE_CONFIG_ROOT\/skills"/);
+    assert.match(linkKnowledgeSource, /ANTIGRAVITY_SKILLS_ROOT="\$HOME\/\.gemini\/config\/skills"/);
+    assert.match(linkKnowledgeSource, /CURSOR_SKILLS_ROOT="\$HOME\/\.cursor\/skills"/);
     assert.match(linkKnowledgeSource, /CLAUDE_COMMANDS_ROOT\/hrtech\.md"/);
 });
 
-test('both install paths fully evict the retired background runner', () => {
-    // Раннера в репозитории больше нет: если оставить только `launchctl unload`,
-    // plist со старой установки продолжит указывать на удалённый скрипт.
+test('both install paths fully evict the retired background runner and repair holds its own lock', () => {
     for (const [name, source] of [['setup.sh', setupSource], ['repair.sh', repairSource]]) {
         assert.match(source, /LEGACY_LABEL="design\.hrtech\.bulochka\.runner"/, `${name} must target the legacy label`);
         assert.match(source, /launchctl bootout "gui\/\$\(id -u\)\/\$LEGACY_LABEL"/, name);
@@ -107,9 +108,8 @@ test('both install paths fully evict the retired background runner', () => {
         assert.match(source, /pkill -f hrtech-watch\.sh/, name);
         assert.match(source, /pkill -f hrtech-driver\.mjs/, name);
     }
-    // Кнопка «Обновить» — единственный путь, по которому миграция доедет до дизайнера.
+    assert.match(repairSource, /REPAIR_LOCK="\$DIR\/\.bulochka-repair\.lock"/);
     assert.match(repairSource, /scripts\/link-knowledge\.sh/);
-    // ...и единственный, которым дизайнер чинит «помощник не видит мост», не открывая терминал.
     assert.match(repairSource, /scripts\/connect-mcp\.sh/);
 });
 
@@ -126,7 +126,6 @@ test('the shared protocol no longer carries the queue playbook', () => {
     ]) {
         assert.doesNotMatch(hrtechCommandSource, dead, `hrtech.md still mentions ${dead}`);
     }
-    // Правила работы с Figma, на которые ссылаются скилы, обязаны пережить чистку.
     for (const kept of [
         /## KNOWN HRDS COMPONENTS/,
         /\*\*Mobile shell/,
@@ -159,9 +158,11 @@ const bridgeClass = ts.transpileModule(
 const searchSkill = '---\nname: hrtech-figma-search\n---\n# Find a Figma design\nUse the local catalog.\n';
 const codexSkill = '/designer/.agents/skills/hrtech-figma-search/SKILL.md';
 const claudeSkill = '/designer/.claude/skills/hrtech-figma-search/SKILL.md';
+const antigravitySkill = '/designer/.gemini/config/skills/hrtech-figma-search/SKILL.md';
+const cursorSkill = '/designer/.cursor/skills/hrtech-figma-search/SKILL.md';
 
-function connectionCheckHarness({ files = {}, env = {} } = {}) {
-    const reads = [], timers = [];
+function connectionCheckHarness({ files = {}, env = {}, allowWrites = false } = {}) {
+    const reads = [], timers = [], writes = [], unlinks = [];
     let websocketServer;
     class FakeWSS extends EventEmitter {
         constructor() { super(); this.clients = new Set(); websocketServer = this; }
@@ -181,7 +182,10 @@ function connectionCheckHarness({ files = {}, env = {} } = {}) {
         readFileSync(file) { reads.push(file); if (!(file in files)) throw new Error('unreadable'); return files[file]; },
         readdirSync(root) { return [...new Set(Object.keys(files).filter(file => file.startsWith(root + '/')).map(file => file.slice(root.length + 1).split('/')[0]))]; },
         accessSync() { throw new Error('not executable'); }, fsConstants: { X_OK: 1 },
-        mkdirSync: forbidden, writeFileSync: forbidden, spawn: forbidden,
+        mkdirSync: allowWrites ? () => {} : forbidden,
+        writeFileSync: allowWrites ? (file, content) => { files[file] = content; writes.push({ file, content }); } : forbidden,
+        unlinkSync: allowWrites ? (file) => { delete files[file]; unlinks.push(file); } : forbidden,
+        spawn: forbidden,
         SERVER_VERSION: 'fixture', HRTECH_VERSION: websocketServerSource.match(/const HRTECH_VERSION = '([^']+)'/)[1],
         getHrtechDistribution: () => 'terminal',
         setTimeout(fn, delay) { const timer = { fn, delay, canceled: false }; timers.push(timer); return timer; },
@@ -201,7 +205,7 @@ function connectionCheckHarness({ files = {}, env = {} } = {}) {
         ws.sent.length = 0;
         return ws;
     }
-    return { server, socket, register, files, reads, timers, context,
+    return { server, socket, register, files, reads, writes, unlinks, timers, context,
         wire: () => websocketServer,
         available: name => context.isFigmaSearchSkillAvailable(name === null ? null : { name, version: 'fixture' }),
         request(ws, requestId, extra = {}) { server.handleMessage({ type: 'HRTECH_CHECK_CONNECTION', requestId, ...extra }, ws); },
@@ -211,18 +215,43 @@ function connectionCheckHarness({ files = {}, env = {} } = {}) {
 const checkResults = ws => ws.sent.filter(message => message.type === 'HRTECH_CONNECTION_CHECK_RESULT').map(message => message.data);
 async function settleCheck() { for (let i = 0; i < 4; i++) await Promise.resolve(); }
 
-test('HELLO advertises the read-only connection check independently from MCP identity', async () => {
+test('HELLO advertises the read-only connection check and version from bulochka.version.json', async () => {
     const h = connectionCheckHarness();
     await h.server.start();
     const socket = h.socket();
     h.wire().clients.add(socket);
     h.wire().emit('connection', socket);
     const hello = socket.sent.find(message => message.type === 'SERVER_HELLO').data;
-    assert.equal(hello.hrtechVersion, '4.33');
+    assert.equal(hello.hrtechVersion, versionMeta.bridgeVersion);
     assert.equal(hello.repairCheck, true);
     assert.equal(hello.fileRegistrationAck, true);
     assert.equal(hello.bridgeProtocol, 1);
     assert.equal(hello.mcpClient, null);
+});
+
+test('FILE_INFO emits FILE_REGISTERED and current PIN_STATE immediately', () => {
+    const h = connectionCheckHarness();
+    const ws = h.socket();
+    h.server.handleMessage({ type: 'FILE_INFO', data: { fileKey: 'F1', fileName: 'Screen' } }, ws);
+    assert.ok(ws.sent.some(m => m.type === 'FILE_REGISTERED' && m.data.fileKey === 'F1'));
+    assert.ok(ws.sent.some(m => m.type === 'PIN_STATE' && m.data.fileKey === 'F1' && m.data.pinned === false));
+});
+
+test('SET_FIGMA_TOKEN saves, clears and emits figmaTokenUpdated for live hot-reload', () => {
+    const env = {};
+    const h = connectionCheckHarness({ env, allowWrites: true });
+    const events = [];
+    h.server.on('figmaTokenUpdated', payload => events.push(payload));
+    const ws = h.register('A');
+    const token = 'figd_1234567890abcdefghij';
+    h.server.handleMessage({ type: 'SET_FIGMA_TOKEN', token }, ws);
+    assert.equal(env.FIGMA_ACCESS_TOKEN, token);
+    assert.deepEqual(JSON.parse(JSON.stringify(events)), [{ hasToken: true }]);
+    assert.deepEqual(JSON.parse(JSON.stringify(ws.sent.at(-1))), { type: 'FIGMA_TOKEN_ACK', data: { ok: true, saved: true } });
+    h.server.handleMessage({ type: 'SET_FIGMA_TOKEN', clear: true }, ws);
+    assert.equal(env.FIGMA_ACCESS_TOKEN, undefined);
+    assert.deepEqual(JSON.parse(JSON.stringify(events)), [{ hasToken: true }, { hasToken: false }]);
+    assert.deepEqual(JSON.parse(JSON.stringify(ws.sent.at(-1))), { type: 'FIGMA_TOKEN_ACK', data: { ok: true, cleared: true } });
 });
 
 test('connection check probes only its registered caller and preserves active file and session pin', async () => {
@@ -313,7 +342,7 @@ test('replacement, re-registration and disconnect cannot deliver stale check res
     }
 });
 
-test('skill availability is fresh and scoped to actual Codex and Claude Code paths', () => {
+test('skill availability is fresh and scoped to Codex, Claude Code, Antigravity and Cursor paths', () => {
     const h = connectionCheckHarness({ files: { [codexSkill]: searchSkill } });
     for (const name of ['Codex', 'codex-mcp-client', 'codex_cli_rs', 'Codex CLI', 'Codex Desktop']) assert.equal(h.available(name), true, name);
     for (const name of ['Claude Code', 'claude-code', 'ClaudeCode']) assert.equal(h.available(name), false, name + ' cannot borrow Codex skills');
@@ -323,6 +352,13 @@ test('skill availability is fresh and scoped to actual Codex and Claude Code pat
     delete h.files[codexSkill];
     assert.equal(h.available('codex-mcp-client'), false, 'availability is not cached from a previous check');
     assert.equal(h.available('claude-code'), true);
+    assert.equal(h.available('antigravity'), false);
+    assert.equal(h.available('cursor'), false);
+    h.files[antigravitySkill] = searchSkill;
+    for (const name of ['antigravity', 'Antigravity', 'agy', 'antigravity-client']) assert.equal(h.available(name), true, name);
+    assert.equal(h.available('cursor'), false, 'Cursor cannot borrow Antigravity skills');
+    h.files[cursorSkill] = searchSkill;
+    for (const name of ['cursor', 'Cursor', 'cursor-vscode']) assert.equal(h.available(name), true, name);
 });
 
 test('custom assistant roots and real readable skill frontmatter are respected', () => {
