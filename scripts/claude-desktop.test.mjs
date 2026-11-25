@@ -225,6 +225,33 @@ test('configureAntigravity writes ~/.gemini/config/mcp_config.json and updates l
   assert.deepEqual(savedLegacy.mcpServers['figma-hrtech'], { command: f.options.nodePath, args: [f.serverPath] });
 });
 
+test('configureAntigravity handles empty 0-byte primary and legacy mcp_config.json files', t => {
+  const f = fixture(t);
+  const primary = path.join(f.home, '.gemini', 'config', 'mcp_config.json');
+  const legacy = path.join(f.home, '.gemini', 'antigravity', 'mcp_config.json');
+  fs.mkdirSync(path.dirname(primary), { recursive: true });
+  fs.mkdirSync(path.dirname(legacy), { recursive: true });
+  fs.writeFileSync(primary, '');
+  fs.writeFileSync(legacy, '   \n');
+  const result = configureAntigravity(f.options);
+  assert.equal(result.configured, true);
+  assert.equal(result.legacyOverrideUpdated, false);
+  assert.deepEqual(f.read(primary).mcpServers['figma-hrtech'], { command: f.options.nodePath, args: [f.serverPath] });
+  assert.equal(fs.readFileSync(legacy, 'utf8'), '   \n');
+  assert.equal(fs.readdirSync(path.dirname(primary)).some(name => name.includes('backup')), false);
+});
+
+test('configureCursor handles UTF-8 BOM-prefixed mcp.json', t => {
+  const f = fixture(t);
+  const target = path.join(f.home, '.cursor', 'mcp.json');
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, '\uFEFF{"mcpServers":{"other":{"command":"/bin/other"}}}\n');
+  configureCursor(f.options);
+  const saved = f.read(target);
+  assert.deepEqual(saved.mcpServers.other, { command: '/bin/other' });
+  assert.deepEqual(saved.mcpServers['figma-hrtech'], { command: f.options.nodePath, args: [f.serverPath] });
+});
+
 test('configureCursor writes ~/.cursor/mcp.json preserving unrelated servers', t => {
   const f = fixture(t);
   const target = path.join(f.home, '.cursor', 'mcp.json');

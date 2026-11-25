@@ -37,8 +37,10 @@ function readJsonConfig(file) {
     if (error.message.startsWith('Настройка ')) throw error;
     throw new Error(`Не удалось прочитать ${path.basename(file)}. Существующие настройки не изменены.`);
   }
+  const normalized = raw.replace(/^\uFEFF/, '');
+  if (normalized.trim() === '') return { file, raw, data: {} };
   let data;
-  try { data = JSON.parse(raw); } catch {
+  try { data = JSON.parse(normalized); } catch {
     throw new Error(`В ${path.basename(file)} некорректный JSON. Исправьте файл и повторите установку; он не перезаписан.`);
   }
   if (!isObject(data) || (data.mcpServers !== undefined && !isObject(data.mcpServers))) {
@@ -75,7 +77,7 @@ function commitJsonTargets(targets, entry, clientLabel) {
       }
       const suffix = randomUUID();
       const temporary = `${target.file}.bulochka-${suffix}.tmp`;
-      const backup = target.raw === null ? null : `${target.file}.bulochka-backup-${suffix}`;
+      const backup = target.raw === null || target.raw.replace(/^\uFEFF/, '').trim() === '' ? null : `${target.file}.bulochka-backup-${suffix}`;
       fs.mkdirSync(path.dirname(target.file), { recursive: true });
       prepared.push({ ...target, output, temporary, backup });
       if (backup) fs.writeFileSync(backup, target.raw, { flag: 'wx', mode: 0o600 });
