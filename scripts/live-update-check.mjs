@@ -30,9 +30,9 @@ transport.stderr?.resume();
 
 let stopped = false, hellos = [], sockets = new Set();
 const reconnectTimers = new Set();
-function connect(fileKey) {
+function connect(fileKey, url = 'ws://localhost:19583') {
   if (stopped) return;
-  const ws = new WebSocket('ws://localhost:19583');
+  const ws = new WebSocket(url);
   sockets.add(ws);
   let serverInfo = null;
   ws.on('error', () => {});
@@ -46,7 +46,7 @@ function connect(fileKey) {
   ws.on('close', () => {
     sockets.delete(ws);
     if (!stopped) {
-      const timer = setTimeout(() => { reconnectTimers.delete(timer); connect(fileKey); }, 100);
+      const timer = setTimeout(() => { reconnectTimers.delete(timer); connect(fileKey, url); }, 100);
       reconnectTimers.add(timer);
     }
   });
@@ -67,8 +67,8 @@ try {
   await client.connect(transport);
   const tools = await client.listTools();
   assert.ok(tools.tools.some(t => t.name === 'figma_execute'));
-  connect('A');
-  connect('B');
+  connect('A', 'ws://127.0.0.1:19583');
+  connect('B', 'ws://[::1]:19583');
   await until(async () => data(await call('figma_list_open_files')).totalFiles === 2);
   const pin = await call('figma_pin_file', { fileKey: 'A' });
   assert.equal(data(pin).pinnedFileKey, 'A');

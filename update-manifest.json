@@ -8,7 +8,7 @@
     },
     {
       "path": "runtime/bin/engine.mjs",
-      "sha256": "6aeb9d62504ebbaf1fae6d070345c2d050a4df09c20a689f63af93d05ddd216d"
+      "sha256": "c18f92f695847964601a90a9f3cdfbde66bce4e1835d38b0aa07d530376f0212"
     },
     {
       "path": "runtime/bin/supervisor.mjs",

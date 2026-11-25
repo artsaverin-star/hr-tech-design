@@ -161,19 +161,29 @@ const claudeSkill = '/designer/.claude/skills/hrtech-figma-search/SKILL.md';
 const antigravitySkill = '/designer/.gemini/config/skills/hrtech-figma-search/SKILL.md';
 const cursorSkill = '/designer/.cursor/skills/hrtech-figma-search/SKILL.md';
 
-function connectionCheckHarness({ files = {}, env = {}, allowWrites = false } = {}) {
-    const reads = [], timers = [], writes = [], unlinks = [];
+function connectionCheckHarness({ files = {}, env = {}, allowWrites = false, v6Error = null } = {}) {
+    const reads = [], timers = [], writes = [], unlinks = [], listens = [];
     let websocketServer;
     class FakeWSS extends EventEmitter {
         constructor() { super(); this.clients = new Set(); websocketServer = this; }
         address() { return { port: 9223 }; }
+        close(cb) { if (cb) cb(); }
     }
     const forbidden = () => assert.fail('Read-only connection check attempted a device command or filesystem write');
     const context = vm.createContext({
         EventEmitter, WSServer: FakeWSS, WebSocket: { OPEN: 1, CONNECTING: 0 },
         createHttpServer() {
             const http = new EventEmitter();
-            http.listen = (_port, _host, done) => done();
+            http.address = () => ({ port: 9223 });
+            http.close = (cb) => { if (cb) cb(); };
+            http.listen = (port, host, done) => {
+                listens.push({ port, host });
+                if (host === '::1' && v6Error) {
+                    queueMicrotask(() => http.emit('error', Object.assign(new Error(v6Error), { code: v6Error })));
+                    return;
+                }
+                done();
+            };
             return http;
         },
         logger: { info() {}, warn() {}, debug() {}, error() {} },
@@ -205,7 +215,7 @@ function connectionCheckHarness({ files = {}, env = {}, allowWrites = false } = 
         ws.sent.length = 0;
         return ws;
     }
-    return { server, socket, register, files, reads, writes, unlinks, timers, context,
+    return { server, socket, register, files, reads, writes, unlinks, listens, timers, context,
         wire: () => websocketServer,
         available: name => context.isFigmaSearchSkillAvailable(name === null ? null : { name, version: 'fixture' }),
         request(ws, requestId, extra = {}) { server.handleMessage({ type: 'HRTECH_CHECK_CONNECTION', requestId, ...extra }, ws); },
@@ -227,6 +237,17 @@ test('HELLO advertises the read-only connection check and version from bulochka.
     assert.equal(hello.fileRegistrationAck, true);
     assert.equal(hello.bridgeProtocol, 1);
     assert.equal(hello.mcpClient, null);
+    assert.deepEqual(h.listens, [{ port: 9223, host: '127.0.0.1' }, { port: 9223, host: '::1' }]);
+});
+
+test('localhost binds dual-stack loopback, rejects IPv6 EADDRINUSE, and degrades cleanly when IPv6 is unavailable', async () => {
+    const conflict = connectionCheckHarness({ v6Error: 'EADDRINUSE' });
+    await assert.rejects(() => conflict.server.start(), /EADDRINUSE/);
+
+    const ipv4Only = connectionCheckHarness({ v6Error: 'EADDRNOTAVAIL' });
+    await ipv4Only.server.start();
+    assert.deepEqual(ipv4Only.listens, [{ port: 9223, host: '127.0.0.1' }, { port: 9223, host: '::1' }]);
+    assert.equal(ipv4Only.server.address().port, 9223);
 });
 
 test('FILE_INFO emits FILE_REGISTERED and current PIN_STATE immediately', () => {

@@ -284,6 +284,7 @@ export class FigmaWebSocketServer extends EventEmitter {
 
   private wss: WSServer | null = null;
   private httpServer: HttpServer | null = null;
+  private httpServerV6: HttpServer | null = null;
   /** Named clients indexed by fileKey — each represents a connected Figma file */
   private clients: Map<string, ClientConnection> = new Map();
   /** Replaced sockets may still deliver frames while their close handshake drains. */
@@ -382,56 +383,105 @@ export class FigmaWebSocketServer extends EventEmitter {
       };
 
       try {
-        // Create HTTP server first — handles plugin UI requests
-        this.httpServer = createHttpServer((req, res) => this.handleHttpRequest(req, res));
+        const requestedHost = this.options.host || 'localhost';
+        const dualStackLocalhost = requestedHost === 'localhost';
+        const primaryHost = dualStackLocalhost ? '127.0.0.1' : requestedHost;
 
-        // Attach WebSocket server to the HTTP server (shares the same port)
+        const isAllowedOrigin = (origin?: string): boolean => (
+          !origin ||                           // No origin — local process (e.g. Node.js client)
+          origin === 'null' ||                  // Sandboxed iframe / Figma Desktop plugin UI
+          origin.startsWith('https://www.figma.com') ||
+          origin.startsWith('https://figma.com')
+        );
+
+        // Single WebSocket server shared across IPv4 (127.0.0.1) and IPv6 (::1) loopback
+        // HTTP listeners. On macOS Node 22, listen(port, 'localhost') binds ONLY [::1],
+        // causing ECONNREFUSED whenever Figma Desktop / Electron / VPN resolves localhost to 127.0.0.1.
         this.wss = new WSServer({
-          server: this.httpServer,
+          noServer: true,
           maxPayload: 100 * 1024 * 1024, // 100MB — screenshots and large component data can be big
-          verifyClient: (info, callback) => {
-            // Mitigate Cross-Site WebSocket Hijacking (CSWSH):
-            // Reject connections from unexpected browser origins.
-            const origin = info.origin;
-            const allowed =
-              !origin ||                           // No origin — local process (e.g. Node.js client)
-              origin === 'null' ||                  // Sandboxed iframe / Figma Desktop plugin UI
-              origin.startsWith('https://www.figma.com') ||
-              origin.startsWith('https://figma.com');
-            if (allowed) {
-              callback(true);
-            } else {
-              logger.warn({ origin }, 'Rejected WebSocket connection from unauthorized origin');
-              callback(false, 403, 'Unauthorized Origin');
-            }
-          },
         });
 
+        const attachUpgrade = (server: HttpServer) => {
+          server.on('upgrade', (req, socket, head) => {
+            const origin = req.headers.origin;
+            if (!isAllowedOrigin(origin)) {
+              logger.warn({ origin }, 'Rejected WebSocket connection from unauthorized origin');
+              try { socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n'); } catch { /* ignore */ }
+              try { socket.destroy(); } catch { /* ignore */ }
+              return;
+            }
+            if (!this.wss) {
+              try { socket.destroy(); } catch { /* ignore */ }
+              return;
+            }
+            this.wss.handleUpgrade(req, socket, head, (ws) => {
+              this.wss?.emit('connection', ws, req);
+            });
+          });
+        };
+
+        const cleanupStartup = () => {
+          try { if (this.wss) { this.wss.close(); this.wss = null; } } catch { /* ignore */ }
+          try { if (this.httpServer) { this.httpServer.close(); this.httpServer = null; } } catch { /* ignore */ }
+          try { if (this.httpServerV6) { this.httpServerV6.close(); this.httpServerV6 = null; } } catch { /* ignore */ }
+        };
+
         // Error handler for startup failures (EADDRINUSE, etc.)
-        // Must be on BOTH httpServer and wss — the WSS re-emits HTTP server errors
-        // and throws if no listener is attached.
         const onStartupError = (error: any) => {
           if (!this._isStarted) {
-            try { if (this.wss) { this.wss.close(); this.wss = null; } } catch { /* ignore */ }
-            try { if (this.httpServer) { this.httpServer.close(); this.httpServer = null; } } catch { /* ignore */ }
+            cleanupStartup();
             rejectOnce(error);
           } else {
             logger.error({ error }, 'HTTP/WebSocket server error');
           }
         };
 
+        this.httpServer = createHttpServer((req, res) => this.handleHttpRequest(req, res));
+        attachUpgrade(this.httpServer);
         this.httpServer.on('error', onStartupError);
         this.wss.on('error', onStartupError);
 
-        // Start listening on the HTTP server (which also handles WS upgrades)
-        this.httpServer.listen(this.options.port, this.options.host || 'localhost', () => {
+        const finishStartup = (boundPort: number, hosts: string[]) => {
           this._isStarted = true;
           this.startHeartbeat();
           logger.info(
-            { port: this.options.port, host: this.options.host || 'localhost' },
+            { port: boundPort, host: requestedHost, hosts },
             'WebSocket bridge server started (with HTTP plugin UI endpoint)'
           );
           resolve();
+        };
+
+        // Start listening on primary loopback (127.0.0.1 for 'localhost', or explicit host)
+        this.httpServer.listen(this.options.port, primaryHost, () => {
+          const boundPort = (this.httpServer?.address?.() as any)?.port ?? this.options.port;
+          if (!dualStackLocalhost) {
+            finishStartup(boundPort, [primaryHost]);
+            return;
+          }
+          // Also bind IPv6 loopback (::1) on the exact same port so both 127.0.0.1 and ::1 work.
+          this.httpServerV6 = createHttpServer((req, res) => this.handleHttpRequest(req, res));
+          attachUpgrade(this.httpServerV6);
+          this.httpServerV6.on('error', (error: any) => {
+            if (!this._isStarted) {
+              if (error?.code === 'EADDRINUSE') {
+                // Another bridge already holds [::1]:boundPort — reject so port-discovery tries port + 1.
+                cleanupStartup();
+                rejectOnce(error);
+                return;
+              }
+              // IPv6 disabled or unavailable on this host — keep IPv4 127.0.0.1 running.
+              logger.debug({ error, port: boundPort }, 'IPv6 loopback unavailable; serving WebSocket bridge on 127.0.0.1 only');
+              try { this.httpServerV6?.close(); } catch { /* ignore */ }
+              this.httpServerV6 = null;
+              finishStartup(boundPort, ['127.0.0.1']);
+            } else {
+              logger.error({ error }, 'IPv6 HTTP/WebSocket server error');
+            }
+          });
+          this.httpServerV6.listen(boundPort, '::1', () => {
+            finishStartup(boundPort, ['127.0.0.1', '::1']);
+          });
         });
 
         this.wss.on('connection', (ws: WebSocket) => {
@@ -450,7 +500,7 @@ export class FigmaWebSocketServer extends EventEmitter {
             ws.send(JSON.stringify({
               type: 'SERVER_HELLO',
               data: {
-                port: (this.wss!.address() as any)?.port,
+                port: this.address()?.port ?? this.options.port,
                 pid: process.pid,
                 serverVersion: SERVER_VERSION,
                 hrtechVersion: HRTECH_VERSION,
@@ -1146,15 +1196,14 @@ export class FigmaWebSocketServer extends EventEmitter {
    */
   address(): import('net').AddressInfo | null {
     // Use the HTTP server's address (which is the actual listening socket)
-    if (this.httpServer) {
+    if (this.httpServer && typeof this.httpServer.address === 'function') {
       const addr = this.httpServer.address();
-      if (typeof addr === 'string' || !addr) return null;
-      return addr as import('net').AddressInfo;
+      if (addr && typeof addr !== 'string') return addr as import('net').AddressInfo;
     }
-    // Fallback for backward compat
-    if (!this.wss) return null;
+    // Fallback for backward compat / test mocks
+    if (!this.wss || typeof this.wss.address !== 'function') return null;
     const addr = this.wss.address();
-    if (typeof addr === 'string') return null;
+    if (!addr || typeof addr === 'string') return null;
     return addr as import('net').AddressInfo;
   }
 
@@ -1521,7 +1570,13 @@ export class FigmaWebSocketServer extends EventEmitter {
       });
     }
 
-    // Then close HTTP server (releases the port)
+    // Then close HTTP server(s) (releases the port on both 127.0.0.1 and ::1)
+    if (this.httpServerV6) {
+      await new Promise<void>((resolve) => {
+        this.httpServerV6!.close(() => resolve());
+      });
+      this.httpServerV6 = null;
+    }
     if (this.httpServer) {
       await new Promise<void>((resolve) => {
         this.httpServer!.close(() => resolve());
