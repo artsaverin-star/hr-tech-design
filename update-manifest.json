@@ -36,7 +36,7 @@
     },
     {
       "path": "scripts/install-next-steps.sh",
-      "sha256": "ffcaf222b67e39b0fbd4b4ea1402f21169a7fa62a95f7b7209787841774e6dd2"
+      "sha256": "7a1ead557f85261ce293ce0886d7257c98adffb261cbfc4e5a54fee06601da84"
     },
     {
       "path": "scripts/link-knowledge.sh",
@@ -260,7 +260,7 @@
     },
     {
       "path": "figma-desktop-bridge/ui.html",
-      "sha256": "36ccc73b3771f884049db11ce1bd128b3cc9f5245919b76b9308f96e3127cd7c"
+      "sha256": "5e6b90492f348d76a975922850239025282b4d166cf827c49b52b969a22c8577"
     },
     {
       "path": "setup.sh",

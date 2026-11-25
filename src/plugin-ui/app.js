@@ -651,7 +651,7 @@ function hrtechRepair(targetConnection) {
       if (window.__hrtechPendingRepair !== pending) return;
       window.__hrtechPendingRepair = null;
       if (note) note.dataset.awaitingFile = 'true';
-      setUpdateNote('Мост пока не подключился. Откройте новый чат помощника или выполните команду в Терминале.', '');
+      setUpdateNote('Мост пока не подключился. Перезапустите помощника (⌘Q), отправьте сообщение в новом чате или выполните команду в Терминале.', '');
       hrtechConnState();
       hrtechRenderRepair();
     }, 20000);
@@ -846,7 +846,7 @@ function hrtechConnState() {
     } else {
       stripText = 'Ожидаю помощника';
       heroTitle = 'Ожидаю помощника';
-      detail = 'Откройте новый чат в Codex, Claude, Antigravity или Cursor.';
+      detail = 'Перезапустите помощника (⌘Q) и отправьте сообщение в новом чате.';
     }
     compact = 'Жду…';
   } else if (s.state === 'replaced') {
