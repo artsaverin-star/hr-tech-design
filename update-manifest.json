@@ -24,7 +24,7 @@
     },
     {
       "path": "scripts/configure-claude-desktop.mjs",
-      "sha256": "d853ae9de0f632039ca42987af4837705b957898d189c4240a678b161c66b803"
+      "sha256": "f78b60dde3f82d0b18818a5d46fd81331dd1f66159dda70dc5598e5f2c01f19e"
     },
     {
       "path": "scripts/connect-mcp.sh",

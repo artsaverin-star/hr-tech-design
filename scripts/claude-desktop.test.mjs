@@ -241,6 +241,28 @@ test('configureAntigravity handles empty 0-byte primary and legacy mcp_config.js
   assert.equal(fs.readdirSync(path.dirname(primary)).some(name => name.includes('backup')), false);
 });
 
+test('configureAntigravity ignores legacy symlink pointing to primary mcp_config.json and rejects foreign symlinks', t => {
+  const f = fixture(t);
+  const primary = path.join(f.home, '.gemini', 'config', 'mcp_config.json');
+  const legacy = path.join(f.home, '.gemini', 'antigravity', 'mcp_config.json');
+  fs.mkdirSync(path.dirname(primary), { recursive: true });
+  fs.mkdirSync(path.dirname(legacy), { recursive: true });
+  fs.writeFileSync(primary, '');
+  fs.symlinkSync(primary, legacy);
+  const result = configureAntigravity(f.options);
+  assert.equal(result.configured, true);
+  assert.equal(result.legacyOverrideUpdated, false);
+  assert.equal(fs.lstatSync(legacy).isSymbolicLink(), true);
+  assert.deepEqual(f.read(primary).mcpServers['figma-hrtech'], { command: f.options.nodePath, args: [f.serverPath] });
+  // Foreign symlink at legacy path is still rejected safely.
+  const foreign = path.join(f.root, 'foreign.json');
+  f.write(foreign, { keep: true });
+  fs.unlinkSync(legacy);
+  fs.symlinkSync(foreign, legacy);
+  assert.throws(() => configureAntigravity(f.options), /обычным файлом/);
+  assert.deepEqual(f.read(foreign), { keep: true });
+});
+
 test('configureCursor handles UTF-8 BOM-prefixed mcp.json', t => {
   const f = fixture(t);
   const target = path.join(f.home, '.cursor', 'mcp.json');

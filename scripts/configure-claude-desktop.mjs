@@ -134,13 +134,33 @@ export function configureAntigravity({ home = os.homedir(), nodePath, serverPath
   validateRuntimePaths(nodePath, serverPath);
   const token = readOptionalToken(tokenPath);
   const entry = { command: nodePath, args: [serverPath], ...(token ? { env: { FIGMA_ACCESS_TOKEN: token } } : {}) };
-  const primary = readJsonConfig(path.join(home, '.gemini', 'config', 'mcp_config.json'));
+  const primaryPath = path.join(home, '.gemini', 'config', 'mcp_config.json');
+  const primary = readJsonConfig(primaryPath);
   const targets = [primary];
-  // Update legacy Antigravity IDE location too if it already contains our entry.
+  // Update legacy Antigravity IDE location too if it is a separate regular file
+  // that already contains our entry. Modern Antigravity symlinks the legacy path
+  // directly to ~/.gemini/config/mcp_config.json — skip when they resolve to the same file.
   const legacyPath = path.join(home, '.gemini', 'antigravity', 'mcp_config.json');
-  if (fs.existsSync(legacyPath)) {
-    const legacy = readJsonConfig(legacyPath);
-    if (Object.hasOwn(legacy.data.mcpServers || {}, SERVER_NAME)) targets.push(legacy);
+  let legacyStat = null;
+  try { legacyStat = fs.lstatSync(legacyPath); } catch {}
+  if (legacyStat) {
+    let sameAsPrimary = false;
+    if (legacyStat.isSymbolicLink()) {
+      try {
+        const resolvedLegacy = path.resolve(path.dirname(legacyPath), fs.readlinkSync(legacyPath));
+        const canonicalPrimary = fs.existsSync(path.dirname(primaryPath))
+          ? path.join(fs.realpathSync(path.dirname(primaryPath)), path.basename(primaryPath))
+          : path.resolve(primaryPath);
+        sameAsPrimary = resolvedLegacy === path.resolve(primaryPath) || resolvedLegacy === canonicalPrimary;
+        if (!sameAsPrimary && fs.existsSync(primaryPath) && fs.existsSync(legacyPath)) {
+          sameAsPrimary = fs.realpathSync(legacyPath) === fs.realpathSync(primaryPath);
+        }
+      } catch {}
+    }
+    if (!sameAsPrimary) {
+      const legacy = readJsonConfig(legacyPath);
+      if (Object.hasOwn(legacy.data.mcpServers || {}, SERVER_NAME)) targets.push(legacy);
+    }
   }
   return commitJsonTargets(targets, entry, 'Antigravity');
 }
