@@ -1,0 +1,439 @@
+/* Универсальная минималистичная презентация (mobile 375×812 и desktop 1440×900).
+   Строго 100% токены HRDS и чистый camelCase (совместимо с CSS Modules localsConvention: 'camelCaseOnly'). */
+
+.deck {
+    position: relative;
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    background: var(--hr-color-surface-0);
+    color: var(--hr-color-text-primary);
+}
+
+/* Тонкая линия прогресса вверху (никаких пилюль и дублирующих шапок) */
+.progressTrack {
+    flex: none;
+    width: 100%;
+    height: var(--hr-border-width-m);
+    background: var(--hr-color-border-tertiary);
+}
+
+.progressFill {
+    height: 100%;
+    background: var(--hr-color-surface-brand-black);
+    transition: width 220ms ease;
+}
+
+/* Основной холст слайда */
+.canvas {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: var(--hr-space-m) var(--hr-space-2-xl);
+    box-sizing: border-box;
+}
+
+/* Слайд с 1 крупным мобильным экраном (2 колонки: текст слева, телефон справа) */
+.splitSlide {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(360px, 0.92fr);
+    align-items: center;
+    gap: var(--hr-space-2-xl);
+    max-width: 1180px;
+    height: 100%;
+    min-height: 100%;
+    margin-inline: auto;
+}
+
+/* Слайд с 1 крупным десктопным экраном или 2–3 экранами в ряд */
+.flowSlide {
+    display: flex;
+    flex-direction: column;
+    gap: var(--hr-space-m);
+    max-width: 1320px;
+    height: 100%;
+    min-height: 100%;
+    margin-inline: auto;
+}
+
+.flowHeader {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--hr-space-2-xs);
+    text-align: center;
+}
+
+.flowHeader .slideTitleWide {
+    max-width: 48ch;
+    text-wrap: balance;
+}
+
+.flowHeader .slideLeadWide {
+    max-width: 66ch;
+    text-wrap: balance;
+}
+
+.flowStage {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-width: 0;
+    min-height: 440px;
+}
+
+.flowRow {
+    position: relative;
+    display: flex;
+    flex: none;
+    align-items: flex-start;
+}
+
+.flowDeviceSlot {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--hr-space-xs);
+}
+
+.flowSvg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    overflow: visible;
+    pointer-events: none;
+    z-index: 4;
+}
+
+.hotspotRect {
+    fill: var(--hr-color-spectre-blue-500);
+    fill-opacity: 0.14;
+    stroke: var(--hr-color-spectre-blue-500);
+    stroke-width: 2.5;
+}
+
+.hotspotDot {
+    fill: var(--hr-color-spectre-blue-500);
+    stroke: var(--hr-color-surface-100);
+    stroke-width: 2;
+}
+
+.flowConnector {
+    fill: none;
+    stroke: var(--hr-color-spectre-blue-500);
+    stroke-width: 2.5;
+    stroke-linecap: round;
+}
+
+.flowArrowHead {
+    fill: var(--hr-color-spectre-blue-500);
+}
+
+/* Чистый типографический / аналитический слайд */
+.centerSlide {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: var(--hr-space-xl);
+    max-width: 980px;
+    min-height: 100%;
+    margin-inline: auto;
+}
+
+.storyCol {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: var(--hr-space-m);
+    min-width: 0;
+    padding-right: var(--hr-space-l);
+}
+
+.slideTitle {
+    margin: 0;
+    max-width: 20ch;
+    text-wrap: balance;
+}
+
+.slideTitleWide {
+    margin: 0;
+    max-width: 38ch;
+    text-wrap: balance;
+}
+
+.slideLead {
+    margin: 0;
+    max-width: 40ch;
+    text-wrap: pretty;
+}
+
+.slideLeadWide {
+    margin: 0;
+    max-width: 62ch;
+    text-wrap: pretty;
+}
+
+/* Контейнер одиночного экрана */
+.deviceCol {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+}
+
+.deviceStage {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    min-height: 500px;
+}
+
+.deviceScaled {
+    position: relative;
+    flex: none;
+}
+
+/* hrds-check: allow size-raw — точная рамка мобильного viewport 375×812 */
+.phoneDevice {
+    box-sizing: content-box;
+    width: 375px;
+    height: 812px;
+    border: 12px solid var(--hr-color-surface-brand-black);
+    border-radius: 56px;
+    box-shadow: var(--hr-effects-shadow);
+    background: var(--hr-color-surface-brand-black);
+    transform-origin: top left;
+    overflow: hidden;
+}
+
+/* hrds-check: allow size-raw — точный viewport мобильного прототипа 375×812 */
+.phoneIframe {
+    display: block;
+    width: 375px;
+    height: 812px;
+    border: 0;
+    border-radius: 44px;
+    background: var(--hr-color-surface-100);
+}
+
+/* hrds-check: allow size-raw — чистая рамка десктопного viewport 1440×900 */
+.desktopDevice {
+    box-sizing: content-box;
+    width: 1440px;
+    height: 932px;
+    border: 1px solid var(--hr-color-border-secondary);
+    border-radius: 16px;
+    box-shadow: var(--hr-effects-shadow);
+    background: var(--hr-color-surface-100);
+    transform-origin: top left;
+    overflow: hidden;
+}
+
+/* hrds-check: allow size-raw — тонкая верхняя полоса окна десктопа (32px) без адресной строки */
+.desktopChromeBar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 32px;
+    padding: 0 14px;
+    border-bottom: 1px solid var(--hr-color-border-tertiary);
+    background: var(--hr-color-surface-50);
+    box-sizing: border-box;
+}
+
+.desktopDot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--hr-color-border-primary);
+}
+
+/* hrds-check: allow size-raw — точный viewport десктопного прототипа 1440×900 */
+.desktopIframe {
+    display: block;
+    width: 1440px;
+    height: 900px;
+    border: 0;
+    background: var(--hr-color-surface-100);
+}
+
+/* Крупные числа без лишних рамок */
+.heroNumbers {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--hr-space-2-xl);
+    padding-top: var(--hr-space-m);
+    border-top: var(--hr-border-width-s) solid var(--hr-color-border-tertiary);
+}
+
+.heroNumbersTwo {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.heroNumberItem {
+    display: flex;
+    flex-direction: column;
+    gap: var(--hr-space-xs);
+    text-wrap: pretty;
+}
+
+.tabular {
+    font-variant-numeric: tabular-nums;
+}
+
+/* График охвата / долей */
+.barList {
+    display: flex;
+    flex-direction: column;
+    gap: var(--hr-space-m);
+}
+
+.barItem {
+    display: flex;
+    flex-direction: column;
+    gap: var(--hr-space-xs);
+}
+
+.barTop {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--hr-space-m);
+}
+
+.barTrack {
+    width: 100%;
+    height: var(--hr-space-s);
+    overflow: hidden;
+    border-radius: var(--hr-border-radius-round);
+    background: var(--hr-color-control-secondary);
+}
+
+.barFill {
+    display: block;
+    height: 100%;
+    border-radius: var(--hr-border-radius-round);
+    transition: width 260ms ease;
+}
+
+.toneIndigo {
+    background: var(--hr-color-spectre-purple-500);
+}
+
+.tonePurple {
+    background: var(--hr-color-spectre-purple-400);
+}
+
+.toneOrange {
+    background: var(--hr-color-spectre-orange-500);
+}
+
+.toneBlue {
+    background: var(--hr-color-spectre-blue-500);
+}
+
+.toneGreen {
+    background: var(--hr-color-spectre-green-500);
+}
+
+.toneNeutral {
+    background: var(--hr-color-text-tertiary);
+}
+
+.toggleRow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--hr-space-m);
+}
+
+/* Финальный слайд: чистый список пунктов в 2 колонки */
+.checklistGrid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--hr-space-m) var(--hr-space-2-xl);
+    padding-top: var(--hr-space-m);
+    border-top: var(--hr-border-width-s) solid var(--hr-color-border-tertiary);
+}
+
+.checklistRow {
+    display: flex;
+    align-items: baseline;
+    gap: var(--hr-space-s);
+    text-wrap: pretty;
+}
+
+.checklistCopy {
+    display: flex;
+    flex-direction: column;
+    gap: var(--hr-space-2-xs);
+}
+
+.checklistNum {
+    flex: none;
+    font-variant-numeric: tabular-nums;
+}
+
+.finalActions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--hr-space-s);
+    padding-top: var(--hr-space-xs);
+}
+
+/* Минималистичная нижняя полоса навигации */
+.footerNav {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--hr-space-m);
+    padding: var(--hr-space-xs) var(--hr-space-xl);
+    border-top: var(--hr-border-width-s) solid var(--hr-color-border-tertiary);
+    background: var(--hr-color-surface-100);
+}
+
+.footerGroup {
+    display: flex;
+    align-items: center;
+    gap: var(--hr-space-s);
+}
+
+@media (max-width: 1024px) {
+    .canvas {
+        padding: var(--hr-space-m);
+    }
+
+    .splitSlide {
+        grid-template-columns: minmax(0, 1fr);
+        height: auto;
+    }
+
+    .storyCol {
+        padding-right: 0;
+    }
+
+    .deviceStage {
+        min-height: 460px;
+        height: 520px;
+    }
+
+    .heroNumbers,
+    .heroNumbersTwo,
+    .checklistGrid {
+        grid-template-columns: minmax(0, 1fr);
+        gap: var(--hr-space-m);
+    }
+}

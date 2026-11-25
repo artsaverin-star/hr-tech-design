@@ -52,7 +52,7 @@
     },
     {
       "path": "claude/skills/hrtech/SKILL.md",
-      "sha256": "c9d46b9748223be3765629ad8d4d55d152ed590e106183f7d270153c4140fb40"
+      "sha256": "0a3494cb8cd935765e60b69aef1207e2a7a872cf0288aed6b665d092205bd504"
     },
     {
       "path": "claude/skills/hrtech-arcadia/SKILL.md",
@@ -97,6 +97,54 @@
     {
       "path": "claude/skills/hrtech-mobile/SKILL.md",
       "sha256": "2a41549ac986bb1771a50a8eab1111ca694a6f1aa7a304ccf8bc4b1143b6b976"
+    },
+    {
+      "path": "claude/skills/hrtech-proto-presentation/SKILL.md",
+      "sha256": "0cf57cbe6ff3a880a7b29cc5c298991417d6dc6157f6b0d185d979861541ca16"
+    },
+    {
+      "path": "claude/skills/hrtech-proto-presentation/references/kit/PresentationDeck.module.css",
+      "sha256": "02ff4c7ac5577a46197e4eba1d9c075bf76c9c07d90635e725ad82372cb3669a"
+    },
+    {
+      "path": "claude/skills/hrtech-proto-presentation/references/kit/PresentationDeck.tsx",
+      "sha256": "5c81810e4e221c3fa368692c64a37ec50060e01980b5d3ff853ee83266e2488b"
+    },
+    {
+      "path": "claude/skills/hrtech-proto-presentation/references/kit/PresentationGate.module.css",
+      "sha256": "11de8fa3a5ceb04682e576dcc3a0013bdb83a10925ec454687f4baca5def3eb8"
+    },
+    {
+      "path": "claude/skills/hrtech-proto-presentation/references/kit/PresentationGate.tsx",
+      "sha256": "f5eecee3482aa442ea077366b9f32a8e6db7ea55cd7a2e7918e09d733fac14f8"
+    },
+    {
+      "path": "claude/skills/hrtech-proto-presentation/references/kit/presentationSlides.template.ts",
+      "sha256": "344d67c1fa04a5b65bf28ca6ffb4aca810d99e89c023027179475a486814f592"
+    },
+    {
+      "path": "claude/skills/hrtech-proto-presentation/references/kit/presentationTypes.ts",
+      "sha256": "8fc007b49544c9cc8eeda06203ae47553298b75a17ade792b179bc67c01d590a"
+    },
+    {
+      "path": "claude/skills/hrtech-proto-presentation/references/kit/presentationTypograf.ts",
+      "sha256": "a8d56bd2138e07f4e77fc4e1addab85e325fc80dec049c1468834a910c1c912e"
+    },
+    {
+      "path": "claude/skills/hrtech-proto-presentation/references/slide-schema.md",
+      "sha256": "d53e0e2787abfc13a8f647ab265633d6e7af92cb9a89419d4ff16c42f287c7bb"
+    },
+    {
+      "path": "claude/skills/hrtech-proto-presentation/references/storytelling-and-copy.md",
+      "sha256": "d4f1112eade9a2a740853646e162714da56c6b12f559fe8098e2ff0dd527a040"
+    },
+    {
+      "path": "claude/skills/hrtech-proto-presentation/scripts/check-presentation.mjs",
+      "sha256": "8b735a4bb00c3e75825b83b4eca052d85c409b494ec80ec03efb69c4482f7cbc"
+    },
+    {
+      "path": "claude/skills/hrtech-proto-presentation/scripts/install-presentation.mjs",
+      "sha256": "005c3e00407cf2cca8ea8ca5c42dcc0b8876542a97ed56bb46d98b8eea3b3804"
     },
     {
       "path": "claude/skills/hrtech-proto-spec/SKILL.md",
